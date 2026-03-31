@@ -79,8 +79,26 @@ pkill -f bot.py
 # 4. 從 GitHub 把修改好的全新程式碼拉下來 (覆蓋更新)
 git pull
 
-# 5. 讓新版的機器人重新回到背景 24 小時上班
+# 5. [新加入必做] 讓雲端主機安裝清單內剛新增的套件 (例如這次的 google-generativeai)
+pip3 install -r requirements.txt
+
+# 6. 讓新版的機器人重新回到背景 24 小時上班
 nohup python3 -u bot.py &
 ```
 
 > 💡 **進階小提點**：如果想偷看有沒有人半夜在玩機器人的 AI 聊天，可以隨時在終端機輸入 `cat nohup.out` 或是即時監控 `tail -f nohup.out` 來查看它的日記本（Console Log）！
+
+---
+
+## 🔥 進階魔法：不斷線的熱重載 (Hot Reload) 更新
+
+既然我們已經擁有高級的 **Cogs 模組化架構**了，未來如果你**只修改了** `cogs/ai_chat.py` 或 `cogs/youtube.py`，你不用再像以前那樣把機器人關機（`pkill`）了。
+
+你可以使用這個專屬擁有者的「微創手術」：
+1. 進入 GCP，照常執行 `cd MyFirstDiscordBot` 和 `git pull` 把程式碼拉下來。
+2. （**不需要**使用 pkill 與 nohup）
+3. 直接在你的 Discord 聊天室裡，對著機器人輸入專屬隱藏指令：
+   - 重新載入 AI 對話腦：`!reload ai_chat`
+   - 重新載入 推播功能：`!reload youtube`
+
+機器人會直接不掉線、1 秒內把新的大腦（或 YouTube 齒輪）換上。如果成功，它會回覆你 `✅ 模組已經重新載入完成！`這對於以後天天維護升級來說超級方便！

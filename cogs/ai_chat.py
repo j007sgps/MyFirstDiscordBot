@@ -14,7 +14,7 @@ class AIChat(commands.Cog):
 
         # 建立 Gemini AI 模型並賦予人格！
         self.model = genai.GenerativeModel(
-            model_name="gemini-3.1-flash", # 使用更輕巧、快速的 flash 版本！
+            model_name="gemini-3-flash-preview", # 使用更輕巧、快速的 flash 版本！
             system_instruction=system_instruction
         )
 

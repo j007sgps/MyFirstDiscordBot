@@ -33,6 +33,17 @@ async def on_ready():
     
     print("模組全部載入完畢，準備接受背德美食的指令！✌🥺✌")
 
+# ================= 隱藏管理員指令 =================
+@bot.command(name="reload")
+@commands.is_owner() # 確保只有機器人擁有者(你本人)可以執行
+async def reload(ctx, extension: str):
+    """(隱藏指令) 在不關機的情況下重新載入 Cog 模組"""
+    try:
+        await bot.reload_extension(f"cogs.{extension}")
+        await ctx.send(f"✅ 模組 `{extension}` 已經重新載入完成！✌🥺✌")
+    except Exception as e:
+        await ctx.send(f"❌ 重載模組失敗 (大腦破壞)：\n```\n{e}\n```")
+
 # 這裡就是機器的啟動台！
 if __name__ == "__main__":
     bot.run(TOKEN)
