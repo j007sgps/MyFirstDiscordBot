@@ -43,7 +43,7 @@ async def on_ready():
     channel = client.get_channel(DISCORD_CHANNEL_ID)
     if channel:
         # 發送上線成功通知到 Discord 內
-        await channel.send("👋 とうも、限界社畜ぅ！！！きぜつちゃんだよ！！（bot啟動測試）")
+        await channel.send("👋 ✌🥺✌ とうも、限界社畜ぅ！！！きぜつちゃんだよ！！（bot啟動測試，理智要融化啦～！）")
         
     # 機器人準備好後，開始啟動定時檢查迴圈
     check_new_video.start()
@@ -62,7 +62,7 @@ async def on_message(message):
             feed = feedparser.parse(YOUTUBE_RSS_URL)
             if len(feed.entries) > 0:
                 latest = feed.entries[0]
-                await message.reply(f"📺 這是最新發布的影片：**{latest.title}**\n點此觀看：{latest.link}")
+                await message.reply(f"✌🥺✌ 就算現在是大半夜，還是只能看這部了吧！！\n為你送上最新鮮的背德美食：**{latest.title}**\n大腦破壞就在這裡：{latest.link}")
             else:
                 await message.reply("目前在這個頻道沒有找到影片喔！")
 
@@ -73,18 +73,19 @@ async def on_message(message):
             if len(feed.entries) > 0:
                 # RSS 預設通常包含最近的 15 支影片清單，我們從裡面隨機挑一支
                 random_video = random.choice(feed.entries)
-                await message.reply(f"🎲 為你隨機抽取了一部影片：**{random_video.title}**\n碰碰運氣看看這部吧：{random_video.link}")
+                await message.reply(f"✌🥺✌ 深夜突然好餓...那只能點開這部**笨蛋等級美味**的影片了吧！\n🎲 為你隨機送上一場罪惡之宴：**{random_video.title}**\n一起讓理智融化吧：{random_video.link}")
             else:
                 await message.reply("目前在這個頻道沒有找到影片喔！")
 
     # 指令三：求救選單
     if message.content == '!help' or message.content == '!說明':
         help_text = (
-            "🤖 **你可以對我下達這些指令：**\n\n"
-            "▶️ `!最新影片`：讓我幫你找出頻道最新發布的作品！\n"
-            "▶️ `!隨意看`：不知道看什麼？讓我幫你隨機抽一部影片看看～\n"
+            "✌🥺✌ **為了健康生活，深夜就該吃背德美食！！** \n\n"
+            "🍟 **你可以對我下達這些罪惡的指令：**\n"
+            "▶️ `!最新影片`：讓我端上剛出爐、熱量爆表的最新發布影片！\n"
+            "▶️ `!隨意看`：深夜不知道看什麼？讓我隨機為你挑一場破壞大腦的罪惡之宴～\n"
             "▶️ `!help` 或 `!說明`：呼叫這個說明選單。\n\n"
-            "💡 *除此之外，只要該頻道有發新影片，我也會第一時間通知大家喔！*"
+            "💡 *當然啦，只要有新影片發布，我也會第一時間通知做個吃貨傢伙！是真的假的？？？*"
         )
         await message.reply(help_text)
 
@@ -113,9 +114,9 @@ async def check_new_video():
             
             # 如果有設定身分組 ID，就在最前面加上標記
             if DISCORD_ROLE_ID != "":
-                message = f"📢 <@&{DISCORD_ROLE_ID}> ！有新影片啦：**{video_title}**\n趕快來看：{video_link}"
+                message = f"📢 <@&{DISCORD_ROLE_ID}> ✌🥺✌ 真的假的？？竟然有新影片！！\n深夜的背德美食來了... 理智要融化啦～！\n快來看這破壞大腦的影片：**{video_title}**\n{video_link}"
             else:
-                message = f"📢 大家注意！有新影片啦：**{video_title}**\n趕快來看：{video_link}"
+                message = f"📢 ✌🥺✌ 真的假的？？竟然有新影片！！\n深夜的背德美食來了... 理智要融化啦～！\n快來看這破壞大腦的影片：**{video_title}**\n{video_link}"
             
             # 傳送訊息到 Discord
             await channel.send(message)
