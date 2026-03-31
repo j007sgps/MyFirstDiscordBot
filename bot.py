@@ -33,6 +33,13 @@ last_video_id = ""
 @client.event
 async def on_ready():
     print(f'機器人已上線！目前登入身份：{client.user}')
+    
+    # 找到我們要發送通知的頻道
+    channel = client.get_channel(DISCORD_CHANNEL_ID)
+    if channel:
+        # 發送上線成功通知到 Discord 內
+        await channel.send("👋 とうも、限界社畜ぅ！！！きぜつちゃんだよ！！（bot啟動測試）")
+        
     # 機器人準備好後，開始啟動定時檢查迴圈
     check_new_video.start()
 
