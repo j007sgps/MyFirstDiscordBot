@@ -1,130 +1,38 @@
 import discord
-from discord.ext import tasks
-import feedparser
-import asyncio
+from discord.ext import commands
 import os
-import random
+import google.generativeai as genai
 from dotenv import load_dotenv
 
-# 載入 .env 檔案中隱藏的密碼
+# ============== 初始化設定 ==============
+# 1. 載入 .env 檔案中隱藏的密碼
 load_dotenv()
 
-# === 在這裡填入你的資料 ===
-# 改為從 .env 環境變數檔案讀取 Token，避免密碼寫死在程式碼裡
+# 2. 從環境變數讀取密碼（必須在 load_dotenv 之後執行！）
 TOKEN = os.getenv('DISCORD_TOKEN')
+genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
-# 想要發送通知的 Discord 頻道 ID (數字)
-DISCORD_CHANNEL_ID = 1485639623899218021  
-
-# YouTube 頻道 ID (例如老高是 UCMUnInmOkrWN4gof9KlhNmQ)
-YOUTUBE_CHANNEL_ID = 'UCwUvX4_nrbYGhlRxqJIB3JA'
-
-# [可選] 如果我們想要標記某個身分組，填入該身分組的 ID (如果是標記所有人，可以留空白)
-# 注意：這是一串純數字，例如 123456789012345678
-DISCORD_ROLE_ID = 1485643846845993061
-# ========================
-
-# 建立機器人
+# 3. 設定 Discord 意圖 (Intents)
 intents = discord.Intents.default()
 intents.message_content = True
-client = discord.Client(intents=intents)
 
-# YouTube 的 RSS 訂閱網址格式
-YOUTUBE_RSS_URL = f"https://www.youtube.com/feeds/videos.xml?channel_id={YOUTUBE_CHANNEL_ID}"
+# 4. 建立機器人：將原本的 discord.Client 升級為支援 Cogs 模組化的 commands.Bot
+# command_prefix='!' 代表所有使用指令的開頭，help_command=None 讓我們可以直接自訂 !help
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-# 用來記錄最新一部影片的 ID，避免重複發送
-last_video_id = ""
+# ============== 主程式事件 ==============
 
-@client.event
+@bot.event
 async def on_ready():
-    print(f'機器人已上線！目前登入身份：{client.user}')
+    # 當機器人登入完成後會執行下面的事情：
+    print(f'機器人已上線！目前登入身份：{bot.user}')
     
-    # 找到我們要發送通知的頻道
-    channel = client.get_channel(DISCORD_CHANNEL_ID)
-    if channel:
-        # 發送上線成功通知到 Discord 內
-        await channel.send("👋 ✌🥺✌ とうも、限界社畜ぅ！！！きぜつちゃんだよ！！（bot啟動測試，理智要融化啦～！）")
-        
-    # 機器人準備好後，開始啟動定時檢查迴圈
-    check_new_video.start()
-
-# 當有訊息時會觸發這個事件
-@client.event
-async def on_message(message):
-    # 避免機器人自己回應自己，造成無限迴圈
-    if message.author == client.user:
-        return
-
-    # 指令一：顯示最新影片
-    if message.content == '!最新影片':
-        # 為了讓使用者立刻知道機器人有收到，我們可以顯示正在輸入的狀態
-        async with message.channel.typing():
-            feed = feedparser.parse(YOUTUBE_RSS_URL)
-            if len(feed.entries) > 0:
-                latest = feed.entries[0]
-                await message.reply(f"✌🥺✌ 就算現在是大半夜，還是只能看這部了吧！！\n為你送上最新鮮的背德美食：**{latest.title}**\n大腦破壞就在這裡：{latest.link}")
-            else:
-                await message.reply("目前在這個頻道沒有找到影片喔！")
-
-    # 指令二：顯示隨機影片
-    if message.content == '!隨意看':
-        async with message.channel.typing():
-            feed = feedparser.parse(YOUTUBE_RSS_URL)
-            if len(feed.entries) > 0:
-                # RSS 預設通常包含最近的 15 支影片清單，我們從裡面隨機挑一支
-                random_video = random.choice(feed.entries)
-                await message.reply(f"✌🥺✌ 深夜突然好餓...那只能點開這部**笨蛋等級美味**的影片了吧！\n🎲 為你隨機送上一場罪惡之宴：**{random_video.title}**\n一起讓理智融化吧：{random_video.link}")
-            else:
-                await message.reply("目前在這個頻道沒有找到影片喔！")
-
-    # 指令三：求救選單
-    if message.content == '!help' or message.content == '!說明':
-        help_text = (
-            "✌🥺✌ **為了健康生活，深夜就該吃背德美食！！** \n\n"
-            "🍟 **你可以對我下達這些罪惡的指令：**\n"
-            "▶️ `!最新影片`：讓我端上剛出爐、熱量爆表的最新發布影片！\n"
-            "▶️ `!隨意看`：深夜不知道看什麼？讓我隨機為你挑一場破壞大腦的罪惡之宴～\n"
-            "▶️ `!help` 或 `!說明`：呼叫這個說明選單。\n\n"
-            "💡 *當然啦，只要有新影片發布，我也會第一時間通知做個吃貨傢伙！是真的假的？？？*"
-        )
-        await message.reply(help_text)
-
-# 定義一個定時任務，每 5 分鐘執行一次
-@tasks.loop(minutes=5)
-async def check_new_video():
-    global last_video_id
+    # [新兵訓練] 讀取並裝上不同的專屬能力齒輪 (Cogs)
+    await bot.load_extension("cogs.youtube")
+    await bot.load_extension("cogs.ai_chat")
     
-    # 讀取 YouTube 頻道的 RSS
-    feed = feedparser.parse(YOUTUBE_RSS_URL)
-    
-    # 如果這個頻道有影片
-    if len(feed.entries) > 0:
-        # 取得最新的一部影片資訊
-        latest_video = feed.entries[0]
-        video_id = latest_video.id
-        
-        # 檢查是不是有新影片（跟上一次檢查的ID不一樣）
-        if last_video_id != "" and video_id != last_video_id:
-            # 找到你想發佈的頻道
-            channel = client.get_channel(DISCORD_CHANNEL_ID)
-            
-            # 組合出要發送的訊息
-            video_title = latest_video.title
-            video_link = latest_video.link
-            
-            # 如果有設定身分組 ID，就在最前面加上標記
-            if DISCORD_ROLE_ID != "":
-                message = f"📢 <@&{DISCORD_ROLE_ID}> ✌🥺✌ 真的假的？？竟然有新影片！！\n深夜的背德美食來了... 理智要融化啦～！\n快來看這破壞大腦的影片：**{video_title}**\n{video_link}"
-            else:
-                message = f"📢 ✌🥺✌ 真的假的？？竟然有新影片！！\n深夜的背德美食來了... 理智要融化啦～！\n快來看這破壞大腦的影片：**{video_title}**\n{video_link}"
-            
-            # 傳送訊息到 Discord
-            await channel.send(message)
-            print(f"已發送通知：{video_title}")
-            
-        # 更新最後一次看到的影片 ID
-        last_video_id = video_id
-        
+    print("模組全部載入完畢，準備接受背德美食的指令！✌🥺✌")
 
-# 啟動機器人
-client.run(TOKEN)
+# 這裡就是機器的啟動台！
+if __name__ == "__main__":
+    bot.run(TOKEN)

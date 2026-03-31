@@ -1,0 +1,61 @@
+import discord
+from discord.ext import commands
+import google.generativeai as genai
+
+class AIChat(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        # 讀取人設檔案 shachiku.md，把它的內容變成字串交給 AI
+        try:
+            with open("shachiku.md", "r", encoding="utf-8") as f:
+                system_instruction = f.read()
+        except FileNotFoundError:
+            system_instruction = "你是一隻限界社畜，喜歡在深夜大吃特吃背德美食。"
+
+        # 建立 Gemini AI 模型並賦予人格！
+        self.model = genai.GenerativeModel(
+            model_name="gemini-3.1-flash", # 使用更輕巧、快速的 flash 版本！
+            system_instruction=system_instruction
+        )
+
+    # 取代原本在 bot.py 裡的 !help
+    @commands.command(name="help", aliases=["說明"])
+    async def custom_help(self, ctx):
+        help_text = (
+            "✌🥺✌ **為了健康生活，深夜就該吃背德美食！！** \n\n"
+            "🍟 **你可以對我下達這些罪惡的指令：**\n"
+            "▶️ `!最新影片`：讓我端上剛出爐、熱量爆表的最新發布影片！\n"
+            "▶️ `!隨意看`：深夜不知道看什麼？讓我隨機為你挑一場破壞大腦的罪惡之宴～\n"
+            "▶️ `!help` 或 `!說明`：呼叫這個說明選單。\n\n"
+            "🤖 **[新功能！] 靈魂注入的 AI 聊天**：直接在群組裡標記我 (@限界社畜！！！)，然後跟我講話吧！\n\n"
+            "💡 *當然啦，只要有新影片發布，我也會第一時間通知做個吃貨傢伙！是真的假的？？？*"
+        )
+        await ctx.reply(help_text)
+
+    # 當有人發言時
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        # 如果是機器人自己發的不要理，避免無限迴圈！
+        if message.author == self.bot.user:
+            return
+
+        # 攔截這則訊息：有沒有標記到我？
+        if self.bot.user.mentioned_in(message):
+            # 把 "@機器人" 的字眼過濾掉，只留下真正的問題
+            user_msg = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
+            
+            if user_msg:
+                # 顯示 "機器人正在輸入..." 的狀態
+                async with message.channel.typing():
+                    try:
+                        # 把使用者的話丟進已經帶有「限界社畜」人設的 Gemini 模型
+                        response = self.model.generate_content(user_msg)
+                        
+                        # 回傳給 Discord
+                        await message.reply(response.text)
+                    except Exception as e:
+                        await message.reply(f"✌🥺✌ 發生了一點錯誤... 難道是卡路里太高大腦被破壞了嗎？！ \n(Error: {e})")
+
+# 必須存在的 setup 函式，用來把這個 Cog 註冊進主程式中
+async def setup(bot):
+    await bot.add_cog(AIChat(bot))
