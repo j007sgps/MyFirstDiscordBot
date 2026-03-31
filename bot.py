@@ -17,6 +17,10 @@ DISCORD_CHANNEL_ID = 1485639623899218021
 
 # YouTube 頻道 ID (例如老高是 UCMUnInmOkrWN4gof9KlhNmQ)
 YOUTUBE_CHANNEL_ID = 'UCwUvX4_nrbYGhlRxqJIB3JA'
+
+# [可選] 如果我們想要標記某個身分組，填入該身分組的 ID (如果是標記所有人，可以留空白)
+# 注意：這是一串純數字，例如 123456789012345678
+DISCORD_ROLE_ID = 1485643846845993061
 # ========================
 
 # 建立機器人
@@ -65,7 +69,12 @@ async def check_new_video():
             # 組合出要發送的訊息
             video_title = latest_video.title
             video_link = latest_video.link
-            message = f"📢 大家注意！有新影片啦：**{video_title}**\n趕快來看：{video_link}"
+            
+            # 如果有設定身分組 ID，就在最前面加上標記
+            if DISCORD_ROLE_ID != "":
+                message = f"📢 <@&{DISCORD_ROLE_ID}> ！有新影片啦：**{video_title}**\n趕快來看：{video_link}"
+            else:
+                message = f"📢 大家注意！有新影片啦：**{video_title}**\n趕快來看：{video_link}"
             
             # 傳送訊息到 Discord
             await channel.send(message)
