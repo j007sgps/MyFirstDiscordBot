@@ -3,6 +3,7 @@ from discord.ext import tasks
 import feedparser
 import asyncio
 import os
+import random
 from dotenv import load_dotenv
 
 # 載入 .env 檔案中隱藏的密碼
@@ -46,6 +47,46 @@ async def on_ready():
         
     # 機器人準備好後，開始啟動定時檢查迴圈
     check_new_video.start()
+
+# 當有訊息時會觸發這個事件
+@client.event
+async def on_message(message):
+    # 避免機器人自己回應自己，造成無限迴圈
+    if message.author == client.user:
+        return
+
+    # 指令一：顯示最新影片
+    if message.content == '!最新影片':
+        # 為了讓使用者立刻知道機器人有收到，我們可以顯示正在輸入的狀態
+        async with message.channel.typing():
+            feed = feedparser.parse(YOUTUBE_RSS_URL)
+            if len(feed.entries) > 0:
+                latest = feed.entries[0]
+                await message.reply(f"📺 這是最新發布的影片：**{latest.title}**\n點此觀看：{latest.link}")
+            else:
+                await message.reply("目前在這個頻道沒有找到影片喔！")
+
+    # 指令二：顯示隨機影片
+    if message.content == '!隨意看':
+        async with message.channel.typing():
+            feed = feedparser.parse(YOUTUBE_RSS_URL)
+            if len(feed.entries) > 0:
+                # RSS 預設通常包含最近的 15 支影片清單，我們從裡面隨機挑一支
+                random_video = random.choice(feed.entries)
+                await message.reply(f"🎲 為你隨機抽取了一部影片：**{random_video.title}**\n碰碰運氣看看這部吧：{random_video.link}")
+            else:
+                await message.reply("目前在這個頻道沒有找到影片喔！")
+
+    # 指令三：求救選單
+    if message.content == '!help' or message.content == '!說明':
+        help_text = (
+            "🤖 **你可以對我下達這些指令：**\n\n"
+            "▶️ `!最新影片`：讓我幫你找出頻道最新發布的作品！\n"
+            "▶️ `!隨意看`：不知道看什麼？讓我幫你隨機抽一部影片看看～\n"
+            "▶️ `!help` 或 `!說明`：呼叫這個說明選單。\n\n"
+            "💡 *除此之外，只要該頻道有發新影片，我也會第一時間通知大家喔！*"
+        )
+        await message.reply(help_text)
 
 # 定義一個定時任務，每 5 分鐘執行一次
 @tasks.loop(minutes=5)
