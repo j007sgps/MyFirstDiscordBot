@@ -39,8 +39,8 @@ class AIChat(commands.Cog):
         if message.author == self.bot.user:
             return
 
-        # 攔截這則訊息：有沒有標記到我？
-        if self.bot.user.mentioned_in(message):
+        # 攔截這則訊息：只有標記到我 (機器人本身) 一個人，且沒有標記 @everyone 或其他身份組時才反應
+        if self.bot.user in message.mentions and len(message.mentions) == 1 and not message.mention_everyone and not message.role_mentions:
             # 把 "@機器人" 的字眼過濾掉，只留下真正的問題
             user_msg = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
             
