@@ -44,12 +44,35 @@ class AIChat(commands.Cog):
             # 把 "@機器人" 的字眼過濾掉，只留下真正的問題
             user_msg = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
             
-            if user_msg:
+            # 檢查是否有文字或圖片附件
+            if user_msg or message.attachments:
                 # 顯示 "機器人正在輸入..." 的狀態
                 async with message.channel.typing():
                     try:
-                        # 把使用者的話丟進已經帶有「限界社畜」人設的 Gemini 模型
-                        response = self.model.generate_content(user_msg)
+                        # 準備要傳遞給 Gemini 的內容清單
+                        contents = []
+                        if user_msg:
+                            contents.append(user_msg)
+                        elif message.attachments:
+                            # 若使用者僅傳圖未打字，給予預設情境引導
+                            contents.append("請發揮你的「限界社畜」人設，幫我狠狠評價一下這張圖片裡的東西！是罪惡的宵夜還是破壞心情的健康食物？")
+                            
+                        # 迴圈檢查附件是否為圖片
+                        for attachment in message.attachments:
+                            if attachment.content_type and attachment.content_type.startswith('image/'):
+                                # 下載圖片資料轉為 bytes
+                                image_bytes = await attachment.read()
+                                contents.append({
+                                    "mime_type": attachment.content_type,
+                                    "data": image_bytes
+                                })
+                        
+                        # 防呆機制：如果是文字跟非圖片附件，但根本沒有可以餵給模型的內容
+                        if not contents:
+                            return
+
+                        # 丟進模型產生回覆！(Gemini 可以直接接收字串與圖片字典混合的 List)
+                        response = self.model.generate_content(contents)
                         
                         # 回傳給 Discord
                         await message.reply(response.text)
