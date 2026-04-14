@@ -5,6 +5,9 @@ import google.generativeai as genai
 class AIChat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # 記憶系統：以頻道 ID 為 Key，值是一個保存最近對話的列表
+        self.chat_history = {}
+        
         # 讀取人設檔案 shachiku.md，把它的內容變成字串交給 AI
         try:
             with open("shachiku.md", "r", encoding="utf-8") as f:
@@ -44,6 +47,13 @@ class AIChat(commands.Cog):
             # 把 "@機器人" 的字眼過濾掉，只留下真正的問題
             user_msg = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
             
+            # 取得頻道 ID 與發言者名稱，準備用來做記憶
+            channel_id = message.channel.id
+            current_user = message.author.display_name
+            
+            if channel_id not in self.chat_history:
+                self.chat_history[channel_id] = []
+            
             # 檢查是否有文字或圖片附件
             if user_msg or message.attachments:
                 # 顯示 "機器人正在輸入..." 的狀態
@@ -51,11 +61,23 @@ class AIChat(commands.Cog):
                     try:
                         # 準備要傳遞給 Gemini 的內容清單
                         contents = []
+                        prompt_text = ""
+                        
+                        # 1. 組合過去的記憶
+                        if self.chat_history[channel_id]:
+                            history_lines = "\n".join(self.chat_history[channel_id])
+                            prompt_text += f"【近期對話紀錄參考】\n{history_lines}\n\n"
+                            
+                        # 2. 加上這次發言者的內容
                         if user_msg:
-                            contents.append(user_msg)
+                            prompt_text += f"【現在】[{current_user}]: {user_msg}"
+                            self.chat_history[channel_id].append(f"[{current_user}]: {user_msg}")
                         elif message.attachments:
-                            # 若使用者僅傳圖未打字，給予預設情境引導
-                            contents.append("請發揮你的「限界社畜」人設，幫我狠狠評價一下這張圖片裡的東西！是罪惡的宵夜還是破壞心情的健康食物？")
+                            # 若使用者僅傳圖未打字
+                            prompt_text += f"【現在】[{current_user}]: (傳送了一張圖片) 請發揮你的「限界社畜」人設，幫我狠狠評價一下這張圖片裡的東西！是罪惡的宵夜還是破壞心情的健康食物？"
+                            self.chat_history[channel_id].append(f"[{current_user}]: (傳送了一張圖片)")
+                            
+                        contents.append(prompt_text)
                             
                         # 迴圈檢查附件是否為圖片
                         for attachment in message.attachments:
@@ -75,7 +97,16 @@ class AIChat(commands.Cog):
                         response = self.model.generate_content(contents)
                         
                         # 回傳給 Discord
-                        await message.reply(response.text)
+                        reply_text = response.text
+                        await message.reply(reply_text)
+                        
+                        # 3. 把機器人自己的回覆也存進記憶裡
+                        self.chat_history[channel_id].append(f"[限界社畜]: {reply_text.strip()}")
+                        
+                        # 4. 記憶管理：避免記憶無限長大 (保留最近 15 則對話，大約可以記住群組裡幾句話的上下文)
+                        MAX_HISTORY = 15
+                        if len(self.chat_history[channel_id]) > MAX_HISTORY:
+                            self.chat_history[channel_id] = self.chat_history[channel_id][-MAX_HISTORY:]
                     except Exception as e:
                         await message.reply(f"✌🥺✌ 發生了一點錯誤... 難道是卡路里太高大腦被破壞了嗎？！ \n(Error: {e})")
 
