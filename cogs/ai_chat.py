@@ -121,13 +121,13 @@ class AIChat(commands.Cog):
                         contents = []
                         prompt_text = ""
                         
-                        # 0. 讀取過去的摘要
+                        # 0. 讀取過去的摘要 (現在是人物誌)
                         summary = self.get_summary(channel_id)
                         if summary:
-                            prompt_text += f"【過去的對話總結摘要】\n{summary}\n\n"
+                            prompt_text += f"【群組成員人物誌（你的長期記憶）】\n{summary}\n\n"
                             
-                        # 1. 組合近期未壓縮的記憶 (取最多 20 句)
-                        history_rows = self.get_memory_with_ids(channel_id, limit=20)
+                        # 1. 組合近期未壓縮的記憶 (取最多 50 句)
+                        history_rows = self.get_memory_with_ids(channel_id, limit=50)
                         history = [row[1] for row in history_rows]
                         if history:
                             history_lines = "\n".join(history)
@@ -176,28 +176,33 @@ class AIChat(commands.Cog):
 
     async def compress_memory(self, channel_id):
         try:
-            # 取得目前所有的對話紀錄
-            history_rows = self.get_memory_with_ids(channel_id, limit=20)
+            # 取得目前所有的對話紀錄 (加大範圍到 50)
+            history_rows = self.get_memory_with_ids(channel_id, limit=50)
             
-            # 如果累積的對話少於 10 句，先不壓縮，保留上下文的鮮度
-            if len(history_rows) < 10:
+            # 因為群組人多，累積少於 30 句先不壓縮，讓大家有足夠的即時上下文
+            if len(history_rows) < 30:
                 return
                 
-            print(f"[系統] 頻道 {channel_id} 對話超過 10 句，開始進行背景記憶壓縮...")
+            print(f"[系統] 頻道 {channel_id} 對話超過 30 句，開始進行背景記憶壓縮...")
             # 找出這批對話中最新的 ID，等一下刪除時只刪到這個 ID，避免把壓縮期間新進來的對話刪掉
             last_id = history_rows[-1][0]
             history_text = "\n".join([row[1] for row in history_rows])
             
             old_summary = self.get_summary(channel_id)
             
-            # 請 Gemini 幫忙做總結
+            # 請 Gemini 幫忙做人物誌萃取 (專注於使用者特徵)
             prompt = (
-                "你是一個記憶整理助手。以下是我們過去的對話摘要，以及最新的一段聊天紀錄。\n"
-                "請將這些內容濃縮成一段約 150 字以內的總結，必須保留：使用者的喜好、重要情報、以及目前聊天的核心話題。\n\n"
+                "你是一個專門記錄人類觀察日記的助手。以下是過去建立的【群組成員人物誌】，以及最新的一段聊天紀錄。\n"
+                "請根據最新的對話，更新這份人物誌。你的唯一目標是『提取並記住每個人的特色與情報』，而不是記錄流水帳。\n"
+                "請嚴格遵守以下規則：\n"
+                "1. 僅紀錄少量的日常寒暄與無意義的對話內容，及少量記錄話題進度。\n"
+                "2. 為每個發言過的使用者建立或更新獨立的條目（例如使用 `- [使用者名稱]: 喜歡... / 討厭... / 近況...` 的格式）。\n"
+                "3. 確保將新發現的特徵融合進舊有的紀錄中，若某人沒有新情報也必須保留他的舊紀錄。\n"
+                "4. 總長度請控制在 800 字以內。\n\n"
             )
             if old_summary:
-                prompt += f"【過去的摘要】\n{old_summary}\n\n"
-            prompt += f"【最新對話紀錄】\n{history_text}\n\n請輸出新的總結摘要："
+                prompt += f"【過去的群組成員人物誌】\n{old_summary}\n\n"
+            prompt += f"【最新對話紀錄】\n{history_text}\n\n請輸出更新後的人物誌："
             
             # 用同一個模型來做摘要
             response = self.model.generate_content(prompt)
