@@ -1,12 +1,14 @@
 import discord
 from discord.ext import commands
 import google.generativeai as genai
+import sqlite3
 
 class AIChat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # 記憶系統：以頻道 ID 為 Key，值是一個保存最近對話的列表
-        self.chat_history = {}
+        # 記憶系統：改用 SQLite 達成永久記憶！
+        self.db_path = "chat_history.db"
+        self.init_db()
         
         # 讀取人設檔案 shachiku.md，把它的內容變成字串交給 AI
         try:
@@ -20,6 +22,65 @@ class AIChat(commands.Cog):
             model_name="gemini-3-flash-preview", # 使用更輕巧、快速的 flash 版本！
             system_instruction=system_instruction
         )
+
+    def init_db(self):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id INTEGER,
+                    message TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            # 新增儲存摘要的表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS summaries (
+                    channel_id INTEGER PRIMARY KEY,
+                    summary_text TEXT
+                )
+            ''')
+            conn.commit()
+
+    def add_memory(self, channel_id, message):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO history (channel_id, message) VALUES (?, ?)', (channel_id, message))
+            conn.commit()
+
+    def get_memory_with_ids(self, channel_id, limit=20):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, message FROM history 
+                WHERE channel_id = ? 
+                ORDER BY id DESC LIMIT ?
+            ''', (channel_id, limit))
+            rows = cursor.fetchall()
+            return list(reversed(rows))
+
+    def get_summary(self, channel_id):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT summary_text FROM summaries WHERE channel_id = ?', (channel_id,))
+            row = cursor.fetchone()
+            return row[0] if row else ""
+
+    def save_summary(self, channel_id, summary_text):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                REPLACE INTO summaries (channel_id, summary_text) 
+                VALUES (?, ?)
+            ''', (channel_id, summary_text))
+            conn.commit()
+
+    def clear_history(self, channel_id, up_to_id):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM history WHERE channel_id = ? AND id <= ?', (channel_id, up_to_id))
+            conn.commit()
 
     # 取代原本在 bot.py 裡的 !help
     @commands.command(name="help", aliases=["說明"])
@@ -51,9 +112,6 @@ class AIChat(commands.Cog):
             channel_id = message.channel.id
             current_user = message.author.display_name
             
-            if channel_id not in self.chat_history:
-                self.chat_history[channel_id] = []
-            
             # 檢查是否有文字或圖片附件
             if user_msg or message.attachments:
                 # 顯示 "機器人正在輸入..." 的狀態
@@ -63,19 +121,26 @@ class AIChat(commands.Cog):
                         contents = []
                         prompt_text = ""
                         
-                        # 1. 組合過去的記憶
-                        if self.chat_history[channel_id]:
-                            history_lines = "\n".join(self.chat_history[channel_id])
+                        # 0. 讀取過去的摘要
+                        summary = self.get_summary(channel_id)
+                        if summary:
+                            prompt_text += f"【過去的對話總結摘要】\n{summary}\n\n"
+                            
+                        # 1. 組合近期未壓縮的記憶 (取最多 20 句)
+                        history_rows = self.get_memory_with_ids(channel_id, limit=20)
+                        history = [row[1] for row in history_rows]
+                        if history:
+                            history_lines = "\n".join(history)
                             prompt_text += f"【近期對話紀錄參考】\n{history_lines}\n\n"
                             
                         # 2. 加上這次發言者的內容
                         if user_msg:
                             prompt_text += f"【現在】[{current_user}]: {user_msg}"
-                            self.chat_history[channel_id].append(f"[{current_user}]: {user_msg}")
+                            self.add_memory(channel_id, f"[{current_user}]: {user_msg}")
                         elif message.attachments:
                             # 若使用者僅傳圖未打字
                             prompt_text += f"【現在】[{current_user}]: (傳送了一張圖片) 請發揮你的「限界社畜」人設，幫我狠狠評價一下這張圖片裡的東西！是罪惡的宵夜還是破壞心情的健康食物？"
-                            self.chat_history[channel_id].append(f"[{current_user}]: (傳送了一張圖片)")
+                            self.add_memory(channel_id, f"[{current_user}]: (傳送了一張圖片)")
                             
                         contents.append(prompt_text)
                             
@@ -101,14 +166,50 @@ class AIChat(commands.Cog):
                         await message.reply(reply_text)
                         
                         # 3. 把機器人自己的回覆也存進記憶裡
-                        self.chat_history[channel_id].append(f"[限界社畜]: {reply_text.strip()}")
+                        self.add_memory(channel_id, f"[限界社畜]: {reply_text.strip()}")
                         
-                        # 4. 記憶管理：避免記憶無限長大 (保留最近 15 則對話，大約可以記住群組裡幾句話的上下文)
-                        MAX_HISTORY = 15
-                        if len(self.chat_history[channel_id]) > MAX_HISTORY:
-                            self.chat_history[channel_id] = self.chat_history[channel_id][-MAX_HISTORY:]
+                        # 4. 觸發滾動式摘要壓縮檢查 (放入背景執行，不卡住回應)
+                        self.bot.loop.create_task(self.compress_memory(channel_id))
+                        
                     except Exception as e:
                         await message.reply(f"✌🥺✌ 發生了一點錯誤... 難道是卡路里太高大腦被破壞了嗎？！ \n(Error: {e})")
+
+    async def compress_memory(self, channel_id):
+        try:
+            # 取得目前所有的對話紀錄
+            history_rows = self.get_memory_with_ids(channel_id, limit=20)
+            
+            # 如果累積的對話少於 10 句，先不壓縮，保留上下文的鮮度
+            if len(history_rows) < 10:
+                return
+                
+            print(f"[系統] 頻道 {channel_id} 對話超過 10 句，開始進行背景記憶壓縮...")
+            # 找出這批對話中最新的 ID，等一下刪除時只刪到這個 ID，避免把壓縮期間新進來的對話刪掉
+            last_id = history_rows[-1][0]
+            history_text = "\n".join([row[1] for row in history_rows])
+            
+            old_summary = self.get_summary(channel_id)
+            
+            # 請 Gemini 幫忙做總結
+            prompt = (
+                "你是一個記憶整理助手。以下是我們過去的對話摘要，以及最新的一段聊天紀錄。\n"
+                "請將這些內容濃縮成一段約 150 字以內的總結，必須保留：使用者的喜好、重要情報、以及目前聊天的核心話題。\n\n"
+            )
+            if old_summary:
+                prompt += f"【過去的摘要】\n{old_summary}\n\n"
+            prompt += f"【最新對話紀錄】\n{history_text}\n\n請輸出新的總結摘要："
+            
+            # 用同一個模型來做摘要
+            response = self.model.generate_content(prompt)
+            new_summary = response.text.strip()
+            
+            # 更新資料庫的摘要，並刪除已經壓縮過的對話
+            self.save_summary(channel_id, new_summary)
+            self.clear_history(channel_id, up_to_id=last_id)
+            print(f"[系統] 頻道 {channel_id} 的記憶已壓縮完畢！摘要長度: {len(new_summary)} 字")
+            
+        except Exception as e:
+            print(f"[系統] 壓縮記憶發生錯誤: {e}")
 
 # 必須存在的 setup 函式，用來把這個 Cog 註冊進主程式中
 async def setup(bot):
