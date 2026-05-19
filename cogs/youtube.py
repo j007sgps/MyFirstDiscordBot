@@ -2,18 +2,66 @@ import discord
 from discord.ext import commands, tasks
 import feedparser
 import random
+import sqlite3
 from config import YOUTUBE_RSS_URL, DISCORD_CHANNEL_ID, DISCORD_ROLE_ID
 
 class YouTubeTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.last_video_id = ""
+        self.db_path = "bot_state.db"
+        self.init_db()
+        self.last_video_id = self.get_last_notified_video_id()
         # 啟動定時任務
         self.check_new_video.start()
 
     def cog_unload(self):
         # 模組卸載時停止計時器
         self.check_new_video.cancel()
+
+    def init_db(self):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS youtube_notified (
+                    video_id TEXT PRIMARY KEY,
+                    title TEXT,
+                    link TEXT,
+                    published TEXT,
+                    notified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+
+    def get_last_notified_video_id(self):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT video_id FROM youtube_notified
+                ORDER BY notified_at DESC
+                LIMIT 1
+            ''')
+            row = cursor.fetchone()
+            return row[0] if row else ""
+
+    def is_video_notified(self, video_id):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1 FROM youtube_notified WHERE video_id = ?', (video_id,))
+            return cursor.fetchone() is not None
+
+    def mark_video_notified(self, entry):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR IGNORE INTO youtube_notified (video_id, title, link, published)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                entry.id,
+                getattr(entry, "title", ""),
+                getattr(entry, "link", ""),
+                getattr(entry, "published", "")
+            ))
+            conn.commit()
 
     # 指令：!最新影片
     @commands.command(name="最新影片")
@@ -44,12 +92,15 @@ class YouTubeTracker(commands.Cog):
         feed = feedparser.parse(YOUTUBE_RSS_URL)
         if len(feed.entries) > 0:
             latest = feed.entries[0]
-            if self.last_video_id != "" and latest.id != self.last_video_id:
+            if self.last_video_id == "":
+                self.mark_video_notified(latest)
+            elif not self.is_video_notified(latest.id):
                 channel = self.bot.get_channel(DISCORD_CHANNEL_ID)
                 if channel:
                     role_mention = f"<@&{DISCORD_ROLE_ID}> " if DISCORD_ROLE_ID else ""
                     msg = f"📢 {role_mention}✌🥺✌ 真的假的？？竟然有新影片！！\n深夜的背德美食來了... 理智要融化啦～！\n快來看這破壞大腦的影片：**{latest.title}**\n{latest.link}"
                     await channel.send(msg)
+                    self.mark_video_notified(latest)
             self.last_video_id = latest.id
 
 # 必須存在的 setup 函式，用來把這個 Cog 註冊進主程式中

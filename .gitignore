@@ -1,2 +1,4 @@
 .env
 __pycache__/
+chat_history.db
+bot_state.db

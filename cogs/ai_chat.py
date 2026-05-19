@@ -3,6 +3,8 @@ from discord.ext import commands
 import google.generativeai as genai
 import sqlite3
 
+SAFE_MESSAGE_LIMIT = 1900
+
 class AIChat(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -82,6 +84,45 @@ class AIChat(commands.Cog):
             cursor.execute('DELETE FROM history WHERE channel_id = ? AND id <= ?', (channel_id, up_to_id))
             conn.commit()
 
+    def clear_channel_memory(self, channel_id):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM history WHERE channel_id = ?', (channel_id,))
+            cursor.execute('DELETE FROM summaries WHERE channel_id = ?', (channel_id,))
+            conn.commit()
+
+    def split_message(self, text, limit=SAFE_MESSAGE_LIMIT):
+        if not text:
+            return [""]
+
+        chunks = []
+        remaining = text
+        while len(remaining) > limit:
+            split_at = remaining.rfind("\n", 0, limit)
+            if split_at == -1:
+                split_at = remaining.rfind(" ", 0, limit)
+            if split_at == -1:
+                split_at = limit
+
+            chunks.append(remaining[:split_at].strip())
+            remaining = remaining[split_at:].strip()
+
+        if remaining:
+            chunks.append(remaining)
+        return chunks
+
+    async def send_chunked_reply(self, message, text):
+        chunks = self.split_message(text)
+        await message.reply(chunks[0])
+        for chunk in chunks[1:]:
+            await message.channel.send(chunk)
+
+    async def send_chunked_ctx_reply(self, ctx, text):
+        chunks = self.split_message(text)
+        await ctx.reply(chunks[0])
+        for chunk in chunks[1:]:
+            await ctx.send(chunk)
+
     # 取代原本在 bot.py 裡的 !help
     @commands.command(name="help", aliases=["說明"])
     async def custom_help(self, ctx):
@@ -90,11 +131,44 @@ class AIChat(commands.Cog):
             "🍟 **你可以對我下達這些罪惡的指令：**\n"
             "▶️ `!最新影片`：讓我端上剛出爐、熱量爆表的最新發布影片！\n"
             "▶️ `!隨意看`：深夜不知道看什麼？讓我隨機為你挑一場破壞大腦的罪惡之宴～\n"
+            "▶️ `!memory` / `!記憶`：查看這個頻道的 AI 記憶摘要與近期對話。\n"
+            "▶️ `!forget` / `!忘記`：清掉這個頻道的 AI 記憶。只有 owner 可以用。\n"
             "▶️ `!help` 或 `!說明`：呼叫這個說明選單。\n\n"
             "🤖 **[新功能！] 靈魂注入的 AI 聊天**：直接在群組裡標記我 (@限界社畜！！！)，然後跟我講話吧！\n\n"
             "💡 *當然啦，只要有新影片發布，我也會第一時間通知做個吃貨傢伙！是真的假的？？？*"
         )
-        await ctx.reply(help_text)
+        await self.send_chunked_ctx_reply(ctx, help_text)
+
+    @commands.command(name="memory", aliases=["記憶"])
+    @commands.is_owner()
+    async def show_memory(self, ctx):
+        channel_id = ctx.channel.id
+        summary = self.get_summary(channel_id)
+        history_rows = self.get_memory_with_ids(channel_id, limit=10)
+
+        if not summary and not history_rows:
+            await ctx.reply("這個頻道目前沒有記憶。哼，乾淨得有點可疑。")
+            return
+
+        parts = [f"**頻道記憶：{ctx.channel.name}**"]
+        if summary:
+            parts.append(f"**長期摘要**\n{summary}")
+        else:
+            parts.append("**長期摘要**\n目前沒有壓縮摘要。")
+
+        if history_rows:
+            history_text = "\n".join([f"{row_id}. {message}" for row_id, message in history_rows])
+            parts.append(f"**近期未壓縮對話**\n{history_text}")
+        else:
+            parts.append("**近期未壓縮對話**\n目前沒有。")
+
+        await self.send_chunked_ctx_reply(ctx, "\n\n".join(parts))
+
+    @commands.command(name="forget", aliases=["忘記"])
+    @commands.is_owner()
+    async def forget_memory(self, ctx):
+        self.clear_channel_memory(ctx.channel.id)
+        await ctx.reply("這個頻道的 AI 記憶已經清掉了。不是我想忘，是你叫我忘的喔。")
 
     # 當有人發言時
     @commands.Cog.listener()
@@ -163,7 +237,7 @@ class AIChat(commands.Cog):
                         
                         # 回傳給 Discord
                         reply_text = response.text
-                        await message.reply(reply_text)
+                        await self.send_chunked_reply(message, reply_text)
                         
                         # 3. 把機器人自己的回覆也存進記憶裡
                         self.add_memory(channel_id, f"[限界社畜]: {reply_text.strip()}")
