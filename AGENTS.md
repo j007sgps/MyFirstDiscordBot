@@ -13,6 +13,7 @@
 
 - 語言：Python
 - Discord 框架：`discord.py`
+- Discord 指令：使用 `discord.app_commands` Slash Commands；mention bot 聊天仍靠 `on_message`
 - AI：`google-generativeai`，目前在 `cogs/ai_chat.py` 使用 `gemini-3-flash-preview`
 - YouTube 來源：YouTube RSS feed，透過 `feedparser` 解析
 - 設定來源：`.env` 與 `config.py`
@@ -23,10 +24,10 @@
 - `bot.py`
   - Bot 入口。
   - 載入 `.env`。
-  - 建立 `commands.Bot(command_prefix="!", intents=..., help_command=None)`。
+  - 建立 `VibeBot(commands.Bot)`，用 `setup_hook()` 載入 cogs 並同步 Slash Commands。
   - 啟用 `message_content` intent。
-  - 在 `on_ready()` 載入 `cogs.youtube` 與 `cogs.ai_chat`。
-  - 提供 owner-only 的 `!reload <cog_name>` 熱重載指令，例如 `!reload ai_chat`、`!reload youtube`。
+  - 提供 owner-only 的 `/reload extension:<cog_name>` 熱重載指令，例如 `/reload extension:ai_chat`、`/reload extension:youtube`。
+  - 提供 `/status`、`/狀態` 健康檢查指令。
 
 - `config.py`
   - 放 Discord 頻道 ID、YouTube channel ID、Discord role ID。
@@ -37,9 +38,9 @@
   - `YouTubeTracker` cog。
   - 啟動後每 5 分鐘檢查一次 YouTube RSS。
   - 記住 `last_video_id`，偵測到新片時發訊息到 `DISCORD_CHANNEL_ID`，並可 mention `DISCORD_ROLE_ID`。
-  - 提供兩個文字指令：
-    - `!譛譁ｰ蠖ｱ迚・`：回覆 RSS 中最新影片。
-    - `!髫ｨ諢冗恚`：從 RSS entries 隨機挑一支影片。
+  - 提供兩個 Slash Commands：
+    - `/最新影片`：回覆 RSS 中最新影片。
+    - `/隨意看`：從 RSS entries 隨機挑一支影片。
 
 - `cogs/ai_chat.py`
   - `AIChat` cog。
@@ -49,7 +50,9 @@
   - 使用 SQLite `chat_history.db` 存聊天記憶。
   - `history` 表保存近期對話，`summaries` 表保存每個 channel 的壓縮摘要。
   - 累積到一定量後背景呼叫 `compress_memory()`，用 Gemini 重新整理角色/群組記憶，再刪除已壓縮的 history。
-  - 自訂 `!help`，另有亂碼 alias。
+  - 提供 `/help`、`/說明`。
+  - 提供 owner-only `/memory`、`/記憶` 查看目前頻道記憶。
+  - 提供 owner-only `/forget`、`/忘記` 清除目前頻道記憶。
 
 - `shachiku.md`
   - Bot 角色/persona 的 system prompt。
@@ -88,13 +91,14 @@ nohup python3 -u bot.py &
 若只改 cog，可在 Discord 裡用 owner 帳號執行：
 
 ```text
-!reload ai_chat
-!reload youtube
+/reload extension:ai_chat
+/reload extension:youtube
 ```
 
 ## 環境與權限注意事項
 
-- Discord Developer Portal 需要開啟 Message Content Intent，否則文字指令與 mention 解析可能不能正常工作。
+- Discord Developer Portal 需要開啟 Message Content Intent，否則 mention bot 聊天解析可能不能正常工作。
+- Slash Commands 會在 bot 啟動時自動同步；若剛部署後看不到指令，先等幾分鐘再測。
 - `.env` 必須存在且有正確 token/key。
 - `.env` 已列在 `.gitignore`，維持不要提交機密。
 - `chat_history.db` 是執行時產生的 SQLite 檔案；若要避免提交，建議也加入 `.gitignore`。
@@ -103,7 +107,7 @@ nohup python3 -u bot.py &
 ## 維護規則
 
 - 優先維持 Cogs 架構；新增功能時放進 `cogs/`，並在 `bot.py` 載入。
-- 修改 Discord 指令名稱時，同步更新 `!help` 與這份文件。
+- 修改 Discord 指令名稱時，同步更新 `/help` 與這份文件。
 - 修改 YouTube 通知目標時，優先改 `config.py`。
 - 修改角色人格時，優先改 `shachiku.md`，不要把長 persona 寫死在 Python 裡。
 - 處理 AI 記憶邏輯時，小心 `history` 與 `summaries` 的資料相依；不要無意間刪除使用者想保留的聊天記憶。
@@ -127,9 +131,13 @@ python bot.py
 
 然後在 Discord 測：
 
-- `!help`
-- YouTube 最新/隨機影片指令
+- `/help` 或 `/說明`
+- `/最新影片`
+- `/隨意看`
+- `/status` 或 `/狀態`
+- `/memory` 或 `/記憶`
+- `/forget` 或 `/忘記`
 - mention bot 並輸入一段文字
 - 上傳圖片並 mention bot
-- `!reload ai_chat`
-- `!reload youtube`
+- `/reload extension:ai_chat`
+- `/reload extension:youtube`

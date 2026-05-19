@@ -10,15 +10,15 @@
   - 每 5 分鐘自動巡邏一次。若有新影片，會立刻帶上「崩潰社畜專屬顏文字與誇飾抱怨」推播到 Discord 頻道，支援自動標記身分組功能。
   - 已通知過的影片會記錄在本機 SQLite `bot_state.db`，避免 GCP 重啟或熱重載後又重複推播同一支影片。
 - 🍔 **深夜互動對話指令**：
-  - `!最新影片`：幫你抓出頻道目前最新發布的「大腦破壞」級美食影片。
-  - `!隨意看`：不知道看什麼？讓機器人為你隨機抽選一場罪惡之宴。
-  - `!status` / `!狀態`：查看 bot 上線時間、Discord 延遲、模組載入狀態、YouTube 巡邏任務與 SQLite 資料筆數。
-  - `!help` (或 `!說明`)：喚出專屬的指令選單。
+  - `/最新影片`：幫你抓出頻道目前最新發布的「大腦破壞」級美食影片。
+  - `/隨意看`：不知道看什麼？讓機器人為你隨機抽選一場罪惡之宴。
+  - `/status` / `/狀態`：查看 bot 上線時間、Discord 延遲、模組載入狀態、YouTube 巡邏任務與 SQLite 資料筆數。
+  - `/help` / `/說明`：喚出專屬的 Slash Commands 指令選單。
 - 🤖 **[最新] 靈魂注入 AI 自由聊天 (`cogs/ai_chat.py`)**：
   - 只要在群組內直接 @標記 機器人，它就會讀取專屬的 `shachiku.md` 潛意識（System Instructions），使用 **Gemini 3.1 Flash** 的高速大腦，以「限界社畜」的誇張語氣與你自然對話！
   - Gemini 回覆超過 Discord 單則訊息長度時，會自動分段送出，避免 2000 字限制造成送訊息失敗。
-  - `!memory` / `!記憶`：擁有者限定，查看目前頻道的 AI 長期摘要與近期未壓縮對話。
-  - `!forget` / `!忘記`：擁有者限定，清除目前頻道的 AI 記憶與摘要，測試人格或重置對話狀態時很好用。
+  - `/memory` / `/記憶`：擁有者限定，查看目前頻道的 AI 長期摘要與近期未壓縮對話。
+  - `/forget` / `/忘記`：擁有者限定，清除目前頻道的 AI 記憶與摘要，測試人格或重置對話狀態時很好用。
 
 ---
 
@@ -104,9 +104,9 @@ nohup python3 -u bot.py &
 
 > 💡 **進階小提點**：如果想偷看有沒有人半夜在玩機器人的 AI 聊天，可以隨時在終端機輸入 `cat nohup.out` 或是即時監控 `tail -f nohup.out` 來查看它的日記本（Console Log）！
 
-> 💡 **這次更新提醒**：本次新增的是 Python 程式邏輯與 SQLite 狀態表，沒有新增套件；GCP 上 `git pull` 後，可用下方 Hot Reload 重新載入 `ai_chat` 與 `youtube`，或直接完整重啟 bot。
+> 💡 **這次更新提醒**：本次把既有文字指令改成 Slash Commands。GCP 上 `git pull` 後請完整重啟 bot，讓 `bot.py` 執行 Slash command 同步流程。
 
-> ⚠️ `!status` 是加在 `bot.py` 的主程式指令；如果這次要讓 GCP 上的 bot 取得它，請完整重啟 bot，不能只使用 Hot Reload。
+> ⚠️ Slash Commands 啟動後會自動同步到 Discord；如果剛重啟後沒有立刻看到 `/help`、`/最新影片` 等指令，請等幾分鐘再試。
 
 ---
 
@@ -118,7 +118,7 @@ nohup python3 -u bot.py &
 1. 進入 GCP，照常執行 `cd MyFirstDiscordBot` 和 `git pull` 把程式碼拉下來。
 2. （**不需要**使用 pkill 與 nohup）
 3. 直接在你的 Discord 聊天室裡，對著機器人輸入專屬隱藏指令：
-   - 重新載入 AI 對話腦：`!reload ai_chat`
-   - 重新載入 推播功能：`!reload youtube`
+   - 重新載入 AI 對話腦：`/reload extension:ai_chat`
+   - 重新載入推播功能：`/reload extension:youtube`
 
-機器人會直接不掉線、1 秒內把新的大腦（或 YouTube 齒輪）換上。如果成功，它會回覆你 `✅ 模組已經重新載入完成！`這對於以後天天維護升級來說超級方便！
+機器人會直接不掉線、1 秒內把新的大腦（或 YouTube 齒輪）換上，並重新同步 Slash Commands。這對於以後天天維護升級來說超級方便！

@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import google.generativeai as genai
 import sqlite3
@@ -117,41 +118,55 @@ class AIChat(commands.Cog):
         for chunk in chunks[1:]:
             await message.channel.send(chunk)
 
-    async def send_chunked_ctx_reply(self, ctx, text):
+    async def send_chunked_interaction(self, interaction, text, ephemeral=False):
         chunks = self.split_message(text)
-        await ctx.reply(chunks[0])
-        for chunk in chunks[1:]:
-            await ctx.send(chunk)
+        if interaction.response.is_done():
+            await interaction.followup.send(chunks[0], ephemeral=ephemeral)
+        else:
+            await interaction.response.send_message(chunks[0], ephemeral=ephemeral)
 
-    # 取代原本在 bot.py 裡的 !help
-    @commands.command(name="help", aliases=["說明"])
-    async def custom_help(self, ctx):
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk, ephemeral=ephemeral)
+
+    async def send_help(self, interaction: discord.Interaction):
         help_text = (
             "✌🥺✌ **為了健康生活，深夜就該吃背德美食！！** \n\n"
             "🍟 **你可以對我下達這些罪惡的指令：**\n"
-            "▶️ `!最新影片`：讓我端上剛出爐、熱量爆表的最新發布影片！\n"
-            "▶️ `!隨意看`：深夜不知道看什麼？讓我隨機為你挑一場破壞大腦的罪惡之宴～\n"
-            "▶️ `!memory` / `!記憶`：查看這個頻道的 AI 記憶摘要與近期對話。\n"
-            "▶️ `!forget` / `!忘記`：清掉這個頻道的 AI 記憶。只有 owner 可以用。\n"
-            "▶️ `!status` / `!狀態`：查看 bot 延遲、上線時間、模組與資料庫狀態。\n"
-            "▶️ `!help` 或 `!說明`：呼叫這個說明選單。\n\n"
+            "▶️ `/最新影片`：讓我端上剛出爐、熱量爆表的最新發布影片！\n"
+            "▶️ `/隨意看`：深夜不知道看什麼？讓我隨機為你挑一場破壞大腦的罪惡之宴～\n"
+            "▶️ `/memory` / `/記憶`：查看這個頻道的 AI 記憶摘要與近期對話。\n"
+            "▶️ `/forget` / `/忘記`：清掉這個頻道的 AI 記憶。只有 owner 可以用。\n"
+            "▶️ `/status` / `/狀態`：查看 bot 延遲、上線時間、模組與資料庫狀態。\n"
+            "▶️ `/reload`：重新載入 cog。只有 owner 可以用。\n"
+            "▶️ `/help` 或 `/說明`：呼叫這個說明選單。\n\n"
             "🤖 **[新功能！] 靈魂注入的 AI 聊天**：直接在群組裡標記我 (@限界社畜！！！)，然後跟我講話吧！\n\n"
             "💡 *當然啦，只要有新影片發布，我也會第一時間通知做個吃貨傢伙！是真的假的？？？*"
         )
-        await self.send_chunked_ctx_reply(ctx, help_text)
+        await self.send_chunked_interaction(interaction, help_text)
 
-    @commands.command(name="memory", aliases=["記憶"])
-    @commands.is_owner()
-    async def show_memory(self, ctx):
-        channel_id = ctx.channel.id
+    @app_commands.command(name="help", description="顯示 bot 的 Slash Commands 說明。")
+    async def custom_help(self, interaction: discord.Interaction):
+        await self.send_help(interaction)
+
+    @app_commands.command(name="說明", description="顯示 bot 的 Slash Commands 說明。")
+    async def custom_help_zh(self, interaction: discord.Interaction):
+        await self.send_help(interaction)
+
+    async def send_memory(self, interaction: discord.Interaction):
+        if not await self.bot.is_owner(interaction.user):
+            await interaction.response.send_message("這是 owner-only 指令。哼，記憶庫不是誰都能偷看的。", ephemeral=True)
+            return
+
+        channel_id = interaction.channel_id
         summary = self.get_summary(channel_id)
         history_rows = self.get_memory_with_ids(channel_id, limit=10)
 
         if not summary and not history_rows:
-            await ctx.reply("這個頻道目前沒有記憶。哼，乾淨得有點可疑。")
+            await interaction.response.send_message("這個頻道目前沒有記憶。哼，乾淨得有點可疑。", ephemeral=True)
             return
 
-        parts = [f"**頻道記憶：{ctx.channel.name}**"]
+        channel_name = getattr(interaction.channel, "name", "此頻道")
+        parts = [f"**頻道記憶：{channel_name}**"]
         if summary:
             parts.append(f"**長期摘要**\n{summary}")
         else:
@@ -163,13 +178,31 @@ class AIChat(commands.Cog):
         else:
             parts.append("**近期未壓縮對話**\n目前沒有。")
 
-        await self.send_chunked_ctx_reply(ctx, "\n\n".join(parts))
+        await self.send_chunked_interaction(interaction, "\n\n".join(parts), ephemeral=True)
 
-    @commands.command(name="forget", aliases=["忘記"])
-    @commands.is_owner()
-    async def forget_memory(self, ctx):
-        self.clear_channel_memory(ctx.channel.id)
-        await ctx.reply("這個頻道的 AI 記憶已經清掉了。不是我想忘，是你叫我忘的喔。")
+    @app_commands.command(name="memory", description="查看目前頻道的 AI 記憶。只有 bot owner 可以使用。")
+    async def show_memory(self, interaction: discord.Interaction):
+        await self.send_memory(interaction)
+
+    @app_commands.command(name="記憶", description="查看目前頻道的 AI 記憶。只有 bot owner 可以使用。")
+    async def show_memory_zh(self, interaction: discord.Interaction):
+        await self.send_memory(interaction)
+
+    async def clear_memory(self, interaction: discord.Interaction):
+        if not await self.bot.is_owner(interaction.user):
+            await interaction.response.send_message("這是 owner-only 指令。想讓我失憶？權限先拿出來啦。", ephemeral=True)
+            return
+
+        self.clear_channel_memory(interaction.channel_id)
+        await interaction.response.send_message("這個頻道的 AI 記憶已經清掉了。不是我想忘，是你叫我忘的喔。", ephemeral=True)
+
+    @app_commands.command(name="forget", description="清除目前頻道的 AI 記憶。只有 bot owner 可以使用。")
+    async def forget_memory(self, interaction: discord.Interaction):
+        await self.clear_memory(interaction)
+
+    @app_commands.command(name="忘記", description="清除目前頻道的 AI 記憶。只有 bot owner 可以使用。")
+    async def forget_memory_zh(self, interaction: discord.Interaction):
+        await self.clear_memory(interaction)
 
     # 當有人發言時
     @commands.Cog.listener()

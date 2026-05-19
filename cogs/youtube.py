@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 import feedparser
 import random
@@ -63,27 +64,31 @@ class YouTubeTracker(commands.Cog):
             ))
             conn.commit()
 
-    # 指令：!最新影片
-    @commands.command(name="最新影片")
-    async def latest_video(self, ctx):
-        async with ctx.typing():
-            feed = feedparser.parse(YOUTUBE_RSS_URL)
-            if len(feed.entries) > 0:
-                latest = feed.entries[0]
-                await ctx.reply(f"✌🥺✌ 就算現在是大半夜，還是只能看這部了吧！！\n為你送上最新鮮的背德美食：**{latest.title}**\n大腦破壞就在這裡：{latest.link}")
-            else:
-                await ctx.reply("目前在這個頻道沒有找到影片喔！")
+    async def send_latest_video(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)
+        feed = feedparser.parse(YOUTUBE_RSS_URL)
+        if len(feed.entries) > 0:
+            latest = feed.entries[0]
+            await interaction.followup.send(f"✌🥺✌ 就算現在是大半夜，還是只能看這部了吧！！\n為你送上最新鮮的背德美食：**{latest.title}**\n大腦破壞就在這裡：{latest.link}")
+        else:
+            await interaction.followup.send("目前在這個頻道沒有找到影片喔！")
 
-    # 指令：!隨意看
-    @commands.command(name="隨意看")
-    async def random_video(self, ctx):
-        async with ctx.typing():
-            feed = feedparser.parse(YOUTUBE_RSS_URL)
-            if len(feed.entries) > 0:
-                random_v = random.choice(feed.entries)
-                await ctx.reply(f"✌🥺✌ 深夜突然好餓...那只能點開這部**笨蛋等級美味**的影片了吧！\n🎲 為你隨機送上一場罪惡之宴：**{random_v.title}**\n一起讓理智融化吧：{random_v.link}")
-            else:
-                await ctx.reply("目前在這個頻道沒有找到影片喔！")
+    @app_commands.command(name="最新影片", description="抓出目前追蹤 YouTube 頻道的最新影片。")
+    async def latest_video(self, interaction: discord.Interaction):
+        await self.send_latest_video(interaction)
+
+    async def send_random_video(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)
+        feed = feedparser.parse(YOUTUBE_RSS_URL)
+        if len(feed.entries) > 0:
+            random_v = random.choice(feed.entries)
+            await interaction.followup.send(f"✌🥺✌ 深夜突然好餓...那只能點開這部**笨蛋等級美味**的影片了吧！\n🎲 為你隨機送上一場罪惡之宴：**{random_v.title}**\n一起讓理智融化吧：{random_v.link}")
+        else:
+            await interaction.followup.send("目前在這個頻道沒有找到影片喔！")
+
+    @app_commands.command(name="隨意看", description="從目前追蹤 YouTube 頻道隨機抽一支影片。")
+    async def random_video(self, interaction: discord.Interaction):
+        await self.send_random_video(interaction)
 
     # 定時任務：每 5 分鐘檢查一次 YouTube
     @tasks.loop(minutes=5)
