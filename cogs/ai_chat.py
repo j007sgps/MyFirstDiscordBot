@@ -219,6 +219,16 @@ class AIChat(commands.Cog):
             # 取得頻道 ID 與發言者名稱，準備用來做記憶
             channel_id = message.channel.id
             current_user = message.author.display_name
+
+            # 檢查是否觸發「誰一百」整人例外
+            if "誰一百" in user_msg:
+                reply_text = "你才誰一百！你全家都誰一百！！！"
+                await message.reply(reply_text)
+                self.add_memory(channel_id, f"[{current_user}]: {user_msg}")
+                self.add_memory(channel_id, f"[限界社畜]: {reply_text}")
+                # 滾動式記憶壓縮檢查
+                self.bot.loop.create_task(self.compress_memory(channel_id))
+                return
             
             # 檢查是否有文字或圖片附件
             if user_msg or message.attachments:
