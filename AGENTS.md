@@ -14,7 +14,7 @@
 - 語言：Python
 - Discord 框架：`discord.py`
 - Discord 指令：使用 `discord.app_commands` Slash Commands；mention bot 聊天仍靠 `on_message`
-- AI：`google-generativeai`，目前在 `cogs/ai_chat.py` 使用 `gemini-3-flash-preview`
+- AI：`google-generativeai`，目前在 `cogs/ai_chat.py` 使用 `gemini-3.5-flash`
 - YouTube 來源：YouTube RSS feed，透過 `feedparser` 解析
 - 設定來源：`.env` 與 `config.py`
 - 功能模組：使用 Discord.py Cogs，主程式在啟動時載入 `cogs.youtube` 與 `cogs.ai_chat`
