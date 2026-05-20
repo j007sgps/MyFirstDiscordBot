@@ -97,12 +97,26 @@ def build_status_text():
     gemini_status = "已設定" if os.getenv("GEMINI_API_KEY") else "未設定"
     discord_token_status = "已設定" if TOKEN else "未設定"
 
+    gemini_model = "未載入"
+    if ai_cog and hasattr(ai_cog, "model"):
+        try:
+            model_name = getattr(ai_cog.model, "model_name", "") or getattr(ai_cog.model, "_model_name", "")
+            if model_name:
+                if model_name.startswith("models/"):
+                    model_name = model_name[7:]
+                gemini_model = model_name
+            else:
+                gemini_model = "無法取得模型名稱"
+        except Exception as e:
+            gemini_model = f"讀取失敗 ({e})"
+
     return (
         "✌🥺✌ **Bot 狀態報告**\n"
         f"上線時間：{format_uptime(now - STARTED_AT)}\n"
         f"Discord 延遲：{latency_ms} ms\n"
         f"Discord Token：{discord_token_status}\n"
         f"Gemini API Key：{gemini_status}\n"
+        f"Gemini 模型：{gemini_model}\n"
         f"已載入模組：{loaded_cogs}\n"
         f"AI Chat Cog：{'已載入' if ai_cog else '未載入'}\n"
         f"YouTube Cog：{'已載入' if youtube_cog else '未載入'}\n"
