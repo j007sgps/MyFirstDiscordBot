@@ -40,6 +40,15 @@ def parse_int(value, field_name, allow_zero=False):
     return parsed
 
 
+def serialize_settings(settings):
+    return {
+        "discord_channel_id": str(settings.get("discord_channel_id", "")),
+        "discord_role_id": str(settings.get("discord_role_id", "")),
+        "youtube_channel_id": str(settings.get("youtube_channel_id", "")),
+        "youtube_check_minutes": settings.get("youtube_check_minutes", 5),
+    }
+
+
 def ensure_memory_tables():
     with sqlite3.connect(CHAT_DB_PATH) as conn:
         cursor = conn.cursor()
@@ -193,7 +202,7 @@ class AdminWeb(commands.Cog):
         )
 
     async def handle_get_settings(self, request):
-        return self.json_response(load_settings())
+        return self.json_response(serialize_settings(load_settings()))
 
     async def handle_put_settings(self, request):
         payload = await request.json()
@@ -212,7 +221,7 @@ class AdminWeb(commands.Cog):
         youtube_cog = self.bot.get_cog("YouTubeTracker")
         if youtube_cog:
             youtube_cog.apply_loop_interval()
-        return self.json_response(saved)
+        return self.json_response(serialize_settings(saved))
 
     async def handle_channels(self, request):
         channels = []
@@ -392,7 +401,7 @@ class AdminWeb(commands.Cog):
                 ORDER BY channel_id
                 """
             )
-            channel_ids = [row[0] for row in cursor.fetchall()]
+            channel_ids = [str(row[0]) for row in cursor.fetchall()]
 
         return self.json_response(
             {
@@ -405,6 +414,7 @@ class AdminWeb(commands.Cog):
 
     async def handle_get_memory(self, request):
         channel_id = parse_int(request.query.get("channel_id"), "channel_id")
+        channel_id_text = str(channel_id)
         ensure_memory_tables()
         with sqlite3.connect(CHAT_DB_PATH) as conn:
             cursor = conn.cursor()
@@ -425,8 +435,8 @@ class AdminWeb(commands.Cog):
 
         return self.json_response(
             {
-                "channel_id": channel_id,
-                "channel_name": self.get_channel_name(channel_id),
+                "channel_id": channel_id_text,
+                "channel_name": self.get_channel_name(channel_id_text),
                 "summary_text": summary_row[0] if summary_row else "",
                 "has_summary": bool(summary_row and summary_row[0]),
                 "history_count": history_count,
@@ -449,7 +459,7 @@ class AdminWeb(commands.Cog):
                 (channel_id, summary_text),
             )
             conn.commit()
-        return self.json_response({"ok": True, "channel_id": channel_id, "bytes": len(summary_text.encode("utf-8"))})
+        return self.json_response({"ok": True, "channel_id": str(channel_id), "bytes": len(summary_text.encode("utf-8"))})
 
     async def handle_clear_memory(self, request):
         payload = await request.json()
@@ -460,7 +470,7 @@ class AdminWeb(commands.Cog):
             cursor.execute("DELETE FROM history WHERE channel_id = ?", (channel_id,))
             cursor.execute("DELETE FROM summaries WHERE channel_id = ?", (channel_id,))
             conn.commit()
-        return self.json_response({"ok": True, "channel_id": channel_id})
+        return self.json_response({"ok": True, "channel_id": str(channel_id)})
 
 
 ADMIN_HTML = """<!doctype html>
