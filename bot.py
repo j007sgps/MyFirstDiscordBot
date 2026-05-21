@@ -24,12 +24,14 @@ class VibeBot(commands.Bot):
         # [新兵訓練] 讀取並裝上不同的專屬能力齒輪 (Cogs)
         await self.load_extension("cogs.youtube")
         await self.load_extension("cogs.ai_chat")
+        await self.load_extension("cogs.admin_web")
         synced_commands = await self.tree.sync()
         print(f"Slash commands 已同步：{len(synced_commands)} 個")
 
 # 4. 建立機器人：保留 commands.Bot 作為 Cog 容器，主要互動改用 Slash Commands
 bot = VibeBot(command_prefix=commands.when_mentioned, intents=intents, help_command=None)
 STARTED_AT = datetime.now(timezone.utc)
+bot.started_at = STARTED_AT
 
 def format_uptime(delta):
     total_seconds = int(delta.total_seconds())

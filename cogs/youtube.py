@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 import feedparser
 import random
 import sqlite3
-from config import YOUTUBE_RSS_URL, DISCORD_CHANNEL_ID, DISCORD_ROLE_ID
+from config import get_youtube_rss_url, load_settings
 
 class YouTubeTracker(commands.Cog):
     def __init__(self, bot):
@@ -12,6 +12,7 @@ class YouTubeTracker(commands.Cog):
         self.db_path = "bot_state.db"
         self.init_db()
         self.last_video_id = self.get_last_notified_video_id()
+        self.apply_loop_interval()
         # 啟動定時任務
         self.check_new_video.start()
 
@@ -32,6 +33,20 @@ class YouTubeTracker(commands.Cog):
                 )
             ''')
             conn.commit()
+
+    def current_settings(self):
+        return load_settings()
+
+    def current_rss_url(self):
+        return get_youtube_rss_url(self.current_settings())
+
+    def apply_loop_interval(self):
+        settings = self.current_settings()
+        minutes = max(float(settings.get("youtube_check_minutes", 5)), 0.1)
+        self.check_new_video.change_interval(minutes=minutes)
+
+    def parse_feed(self):
+        return feedparser.parse(self.current_rss_url())
 
     def get_last_notified_video_id(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -66,7 +81,7 @@ class YouTubeTracker(commands.Cog):
 
     async def send_latest_video(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
-        feed = feedparser.parse(YOUTUBE_RSS_URL)
+        feed = self.parse_feed()
         if len(feed.entries) > 0:
             latest = feed.entries[0]
             await interaction.followup.send(f"✌🥺✌ 就算現在是大半夜，還是只能看這部了吧！！\n為你送上最新鮮的背德美食：**{latest.title}**\n大腦破壞就在這裡：{latest.link}")
@@ -79,7 +94,7 @@ class YouTubeTracker(commands.Cog):
 
     async def send_random_video(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
-        feed = feedparser.parse(YOUTUBE_RSS_URL)
+        feed = self.parse_feed()
         if len(feed.entries) > 0:
             random_v = random.choice(feed.entries)
             await interaction.followup.send(f"✌🥺✌ 深夜突然好餓...那只能點開這部**笨蛋等級美味**的影片了吧！\n🎲 為你隨機送上一場罪惡之宴：**{random_v.title}**\n一起讓理智融化吧：{random_v.link}")
@@ -94,19 +109,27 @@ class YouTubeTracker(commands.Cog):
     @tasks.loop(minutes=5)
     async def check_new_video(self):
         await self.bot.wait_until_ready()
-        feed = feedparser.parse(YOUTUBE_RSS_URL)
+        self.apply_loop_interval()
+        await self.check_latest_video_once()
+
+    async def check_latest_video_once(self):
+        settings = self.current_settings()
+        feed = self.parse_feed()
         if len(feed.entries) > 0:
             latest = feed.entries[0]
             if self.last_video_id == "":
                 self.mark_video_notified(latest)
             elif not self.is_video_notified(latest.id):
-                channel = self.bot.get_channel(DISCORD_CHANNEL_ID)
+                channel = self.bot.get_channel(int(settings["discord_channel_id"]))
                 if channel:
-                    role_mention = f"<@&{DISCORD_ROLE_ID}> " if DISCORD_ROLE_ID else ""
+                    role_id = int(settings["discord_role_id"]) if settings.get("discord_role_id") else 0
+                    role_mention = f"<@&{role_id}> " if role_id else ""
                     msg = f"📢 {role_mention}✌🥺✌ 真的假的？？竟然有新影片！！\n深夜的背德美食來了... 理智要融化啦～！\n快來看這破壞大腦的影片：**{latest.title}**\n{latest.link}"
                     await channel.send(msg)
                     self.mark_video_notified(latest)
             self.last_video_id = latest.id
+            return latest
+        return None
 
 # 必須存在的 setup 函式，用來把這個 Cog 註冊進主程式中
 async def setup(bot):
