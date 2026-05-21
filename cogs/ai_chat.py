@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import google.generativeai as genai
 import sqlite3
+from config import load_persona_store
 
 SAFE_MESSAGE_LIMIT = 1900
 
@@ -13,18 +14,37 @@ class AIChat(commands.Cog):
         self.db_path = "chat_history.db"
         self.init_db()
         
+        self.model_name = "gemini-3.5-flash"
+        self.default_system_instruction = self.read_default_persona()
+
         # 讀取人設檔案 shachiku.md，把它的內容變成字串交給 AI
+        self.model = self.build_model(self.default_system_instruction)
+
+    def read_default_persona(self):
         try:
             with open("shachiku.md", "r", encoding="utf-8") as f:
-                system_instruction = f.read()
+                return f.read()
         except FileNotFoundError:
-            system_instruction = "你是一隻限界社畜，喜歡在深夜大吃特吃背德美食。"
+            return "你是一隻限界社畜，喜歡在深夜大吃特吃背德美食。"
 
-        # 建立 Gemini AI 模型並賦予人格！
-        self.model = genai.GenerativeModel(
-            model_name="gemini-3.5-flash", # 使用更輕巧、快速的 flash 版本！
+    def build_model(self, system_instruction):
+        return genai.GenerativeModel(
+            model_name=self.model_name, # 使用更輕巧、快速的 flash 版本！
             system_instruction=system_instruction
         )
+
+    def get_persona_for_channel(self, channel_id):
+        store = load_persona_store()
+        template_id = store.get("channel_personas", {}).get(str(channel_id), "")
+        template = store.get("templates", {}).get(template_id, {})
+        content = template.get("content", "") if isinstance(template, dict) else ""
+        if content:
+            return content, template_id
+        return self.read_default_persona(), ""
+
+    def get_model_for_channel(self, channel_id):
+        system_instruction, _ = self.get_persona_for_channel(channel_id)
+        return self.build_model(system_instruction)
 
     def init_db(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -277,7 +297,7 @@ class AIChat(commands.Cog):
                             return
 
                         # 丟進模型產生回覆！(Gemini 可以直接接收字串與圖片字典混合的 List)
-                        response = self.model.generate_content(contents)
+                        response = self.get_model_for_channel(channel_id).generate_content(contents)
                         
                         # 回傳給 Discord
                         reply_text = response.text
@@ -323,7 +343,7 @@ class AIChat(commands.Cog):
             prompt += f"【最新對話紀錄】\n{history_text}\n\n請輸出更新後的人物誌："
             
             # 用同一個模型來做摘要
-            response = self.model.generate_content(prompt)
+            response = self.get_model_for_channel(channel_id).generate_content(prompt)
             new_summary = response.text.strip()
             
             # 更新資料庫的摘要，並刪除已經壓縮過的對話

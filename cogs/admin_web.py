@@ -3,11 +3,12 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from aiohttp import web
 from discord.ext import commands
 
-from config import load_settings, save_settings
+from config import load_persona_store, load_settings, save_persona_store, save_settings
 
 
 PERSONA_PATH = Path("shachiku.md")
@@ -82,8 +83,14 @@ class AdminWeb(commands.Cog):
         app.router.add_get("/api/status", self.handle_status)
         app.router.add_get("/api/settings", self.handle_get_settings)
         app.router.add_put("/api/settings", self.handle_put_settings)
+        app.router.add_get("/api/channels", self.handle_channels)
         app.router.add_get("/api/persona", self.handle_get_persona)
         app.router.add_put("/api/persona", self.handle_put_persona)
+        app.router.add_post("/api/persona/lab", self.handle_persona_lab)
+        app.router.add_get("/api/personas", self.handle_get_personas)
+        app.router.add_put("/api/personas/template", self.handle_put_persona_template)
+        app.router.add_delete("/api/personas/template", self.handle_delete_persona_template)
+        app.router.add_put("/api/personas/channel", self.handle_put_channel_persona)
         app.router.add_post("/api/reload", self.handle_reload)
         app.router.add_get("/api/youtube/latest", self.handle_youtube_latest)
         app.router.add_post("/api/youtube/check", self.handle_youtube_check)
@@ -207,6 +214,20 @@ class AdminWeb(commands.Cog):
             youtube_cog.apply_loop_interval()
         return self.json_response(saved)
 
+    async def handle_channels(self, request):
+        channels = []
+        for guild in self.bot.guilds:
+            for channel in guild.text_channels:
+                channels.append(
+                    {
+                        "id": str(channel.id),
+                        "name": channel.name,
+                        "guild": guild.name,
+                    }
+                )
+        channels.sort(key=lambda item: (item["guild"].lower(), item["name"].lower()))
+        return self.json_response({"channels": channels})
+
     async def handle_get_persona(self, request):
         if not PERSONA_PATH.exists():
             return self.json_response({"content": ""})
@@ -217,6 +238,97 @@ class AdminWeb(commands.Cog):
         content = str(payload.get("content", ""))
         PERSONA_PATH.write_text(content, encoding="utf-8")
         return self.json_response({"ok": True, "bytes": len(content.encode("utf-8"))})
+
+    async def handle_persona_lab(self, request):
+        payload = await request.json()
+        content = str(payload.get("content", "")).strip()
+        message = str(payload.get("message", "")).strip()
+        if not content:
+            raise web.HTTPBadRequest(text="content is required")
+        if not message:
+            raise web.HTTPBadRequest(text="message is required")
+
+        ai_cog = self.bot.get_cog("AIChat")
+        if not ai_cog:
+            return self.json_response({"error": "AIChat is not loaded"}, status=503)
+
+        model = ai_cog.build_model(content)
+        response = model.generate_content(message)
+        return self.json_response({"ok": True, "reply": getattr(response, "text", "")})
+
+    async def handle_get_personas(self, request):
+        store = load_persona_store()
+        assignments = []
+        for channel_id, template_id in sorted(store.get("channel_personas", {}).items()):
+            assignments.append(
+                {
+                    "channel_id": channel_id,
+                    "channel_name": self.get_channel_name(channel_id),
+                    "template_id": template_id,
+                    "template_name": store.get("templates", {}).get(template_id, {}).get("name", template_id),
+                }
+            )
+        return self.json_response(
+            {
+                "templates": store.get("templates", {}),
+                "channel_personas": store.get("channel_personas", {}),
+                "assignments": assignments,
+            }
+        )
+
+    async def handle_put_persona_template(self, request):
+        payload = await request.json()
+        store = load_persona_store()
+        template_id = str(payload.get("id", "")).strip() or f"persona-{uuid4().hex[:8]}"
+        name = str(payload.get("name", "")).strip() or template_id
+        content = str(payload.get("content", "")).strip()
+        if not content:
+            raise web.HTTPBadRequest(text="content is required")
+
+        store.setdefault("templates", {})[template_id] = {
+            "name": name,
+            "content": content,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        saved = save_persona_store(store)
+        return self.json_response({"ok": True, "id": template_id, "template": saved["templates"][template_id]})
+
+    async def handle_delete_persona_template(self, request):
+        template_id = str(request.query.get("id", "")).strip()
+        if not template_id:
+            raise web.HTTPBadRequest(text="id is required")
+
+        store = load_persona_store()
+        store.get("templates", {}).pop(template_id, None)
+        store["channel_personas"] = {
+            channel_id: assigned_id
+            for channel_id, assigned_id in store.get("channel_personas", {}).items()
+            if assigned_id != template_id
+        }
+        save_persona_store(store)
+        return self.json_response({"ok": True, "id": template_id})
+
+    async def handle_put_channel_persona(self, request):
+        payload = await request.json()
+        channel_id = str(parse_int(payload.get("channel_id"), "channel_id"))
+        template_id = str(payload.get("template_id", "")).strip()
+        store = load_persona_store()
+
+        if template_id:
+            if template_id not in store.get("templates", {}):
+                raise web.HTTPBadRequest(text="template_id does not exist")
+            store.setdefault("channel_personas", {})[channel_id] = template_id
+        else:
+            store.setdefault("channel_personas", {}).pop(channel_id, None)
+
+        saved = save_persona_store(store)
+        return self.json_response(
+            {
+                "ok": True,
+                "channel_id": channel_id,
+                "template_id": saved.get("channel_personas", {}).get(channel_id, ""),
+            }
+        )
 
     async def handle_reload(self, request):
         payload = await request.json()
@@ -515,8 +627,29 @@ ADMIN_HTML = """<!doctype html>
 
     <section>
       <h2>Persona</h2>
+      <div class="grid">
+        <label>人格版型<select id="persona-template-select"></select></label>
+        <label>版型 ID<input id="persona-template-id" placeholder="留空會自動產生"></label>
+        <label class="span-2">版型名稱<input id="persona-template-name" placeholder="例如：社畜 / 天才 / 冷靜助理"></label>
+      </div>
       <textarea id="persona" spellcheck="false"></textarea>
-      <p class="toolbar"><button id="save-persona">儲存 Persona</button><button class="secondary" data-reload="ai_chat">Reload AI Chat</button></p>
+      <p class="toolbar">
+        <button id="save-persona">儲存預設 Persona</button>
+        <button id="save-persona-template">保存為人格版型</button>
+        <button id="delete-persona-template" class="danger">刪除版型</button>
+        <button class="secondary" data-reload="ai_chat">Reload AI Chat</button>
+      </p>
+      <div class="grid">
+        <label>選擇頻道<select id="persona-channel-select"></select></label>
+        <label>頻道 ID<input id="persona-channel-id" placeholder="要指定人格的 Discord channel ID"></label>
+        <label>指定人格<select id="persona-assign-template"></select></label>
+        <div class="toolbar"><button id="assign-persona">指定頻道人格</button><button id="clear-persona-assignment" class="secondary">清除指定</button></div>
+      </div>
+      <pre id="persona-assignments"></pre>
+      <h3>Persona Lab</h3>
+      <textarea id="persona-lab-message" spellcheck="false" placeholder="輸入測試訊息。這裡只測試人格，不寫入 Discord 記憶。"></textarea>
+      <p class="toolbar"><button id="run-persona-lab">測試人格回覆</button></p>
+      <pre id="persona-lab-output"></pre>
     </section>
 
     <section>
@@ -638,10 +771,83 @@ ADMIN_HTML = """<!doctype html>
       print(await api("/api/persona", { method: "PUT", body: JSON.stringify({ content: el("persona").value }) }));
     }
 
+    async function loadPersonas() {
+      const data = await api("/api/personas");
+      const templates = data.templates || {};
+      const options = Object.entries(templates).map(([id, template]) => (
+        `<option value="${escapeHtml(id)}">${escapeHtml(template.name || id)}</option>`
+      )).join("");
+      el("persona-template-select").innerHTML = `<option value="">載入版型</option>${options}`;
+      el("persona-assign-template").innerHTML = `<option value="">使用預設 Persona</option>${options}`;
+      el("persona-assignments").textContent = JSON.stringify(data.assignments || [], null, 2);
+    }
+
+    async function loadDiscordChannels() {
+      const data = await api("/api/channels");
+      el("persona-channel-select").innerHTML = `<option value="">選擇頻道</option>` + data.channels.map((channel) => (
+        `<option value="${channel.id}">${escapeHtml(channel.guild)} / #${escapeHtml(channel.name)} (${channel.id})</option>`
+      )).join("");
+    }
+
+    async function savePersonaTemplate() {
+      const payload = {
+        id: el("persona-template-id").value.trim(),
+        name: el("persona-template-name").value.trim(),
+        content: el("persona").value
+      };
+      const data = await api("/api/personas/template", { method: "PUT", body: JSON.stringify(payload) });
+      el("persona-template-id").value = data.id;
+      print(data);
+      await loadPersonas();
+    }
+
+    async function deletePersonaTemplate() {
+      const id = el("persona-template-id").value.trim() || el("persona-template-select").value;
+      if (!id) throw new Error("請先選擇或輸入版型 ID");
+      if (!confirm(`確定刪除人格版型 ${id}？頻道指派也會一起移除。`)) return;
+      print(await api(`/api/personas/template?id=${encodeURIComponent(id)}`, { method: "DELETE" }));
+      el("persona-template-id").value = "";
+      el("persona-template-name").value = "";
+      await loadPersonas();
+    }
+
+    async function loadSelectedPersonaTemplate() {
+      const id = el("persona-template-select").value;
+      if (!id) return;
+      const data = await api("/api/personas");
+      const template = (data.templates || {})[id];
+      if (!template) return;
+      el("persona-template-id").value = id;
+      el("persona-template-name").value = template.name || id;
+      el("persona").value = template.content || "";
+    }
+
+    async function assignPersona(clear = false) {
+      const channelId = el("persona-channel-id").value.trim();
+      if (!channelId) throw new Error("請先輸入 channel ID");
+      const templateId = clear ? "" : el("persona-assign-template").value;
+      const data = await api("/api/personas/channel", {
+        method: "PUT",
+        body: JSON.stringify({ channel_id: channelId, template_id: templateId })
+      });
+      print(data);
+      await loadPersonas();
+    }
+
+    async function runPersonaLab() {
+      const payload = {
+        content: el("persona").value,
+        message: el("persona-lab-message").value
+      };
+      const data = await api("/api/persona/lab", { method: "POST", body: JSON.stringify(payload) });
+      el("persona-lab-output").textContent = data.reply || "";
+    }
+
     async function reloadCog(extension) {
       print(await api("/api/reload", { method: "POST", body: JSON.stringify({ extension }) }));
       await loadStatus();
       await loadChannels();
+      await loadPersonas();
     }
 
     async function loadLatest() {
@@ -708,7 +914,7 @@ ADMIN_HTML = """<!doctype html>
 
     async function boot() {
       try {
-        await Promise.all([loadStatus(), loadSettings(), loadPersona(), loadChannels()]);
+        await Promise.all([loadStatus(), loadSettings(), loadPersona(), loadPersonas(), loadDiscordChannels(), loadChannels()]);
       } catch (error) {
         print({ error: error.message });
       }
@@ -721,6 +927,15 @@ ADMIN_HTML = """<!doctype html>
     el("refresh").addEventListener("click", boot);
     el("save-settings").addEventListener("click", () => saveSettings().catch((error) => print({ error: error.message })));
     el("save-persona").addEventListener("click", () => savePersona().catch((error) => print({ error: error.message })));
+    el("save-persona-template").addEventListener("click", () => savePersonaTemplate().catch((error) => print({ error: error.message })));
+    el("delete-persona-template").addEventListener("click", () => deletePersonaTemplate().catch((error) => print({ error: error.message })));
+    el("persona-template-select").addEventListener("change", () => loadSelectedPersonaTemplate().catch((error) => print({ error: error.message })));
+    el("persona-channel-select").addEventListener("change", () => { el("persona-channel-id").value = el("persona-channel-select").value; });
+    el("assign-persona").addEventListener("click", () => assignPersona(false).catch((error) => print({ error: error.message })));
+    el("clear-persona-assignment").addEventListener("click", () => assignPersona(true).catch((error) => print({ error: error.message })));
+    el("run-persona-lab").addEventListener("click", () => runPersonaLab().catch((error) => {
+      el("persona-lab-output").textContent = JSON.stringify({ error: error.message }, null, 2);
+    }));
     el("youtube-latest").addEventListener("click", () => loadLatest().catch((error) => print({ error: error.message })));
     el("youtube-check").addEventListener("click", () => checkYoutube().catch((error) => print({ error: error.message })));
     el("load-memory").addEventListener("click", () => loadMemory().catch((error) => print({ error: error.message })));
