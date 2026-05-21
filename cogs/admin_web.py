@@ -471,58 +471,113 @@ ADMIN_HTML = """<!doctype html>
   <title>Bot Admin</title>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f6f7f9;
-      --panel: #ffffff;
-      --text: #1d2430;
-      --muted: #657083;
-      --line: #d7dce3;
-      --accent: #0f766e;
-      --accent-dark: #115e59;
-      --danger: #b42318;
-      --warn: #925400;
-      --mono: "Cascadia Mono", Consolas, monospace;
+      color-scheme: dark;
+      --bg: #10110f;
+      --bg-2: #171812;
+      --panel: rgba(31, 33, 25, .92);
+      --panel-strong: #25271d;
+      --text: #f4eedf;
+      --muted: #aaa08d;
+      --line: #3b3a2f;
+      --line-bright: #575440;
+      --accent: #42d392;
+      --accent-dark: #1f9e69;
+      --accent-soft: rgba(66, 211, 146, .14);
+      --danger: #ff6b5f;
+      --danger-soft: rgba(255, 107, 95, .14);
+      --warn: #e6b450;
+      --ink: #080a08;
+      --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      --body: "Aptos", "Segoe UI", "Noto Sans TC", sans-serif;
     }
     * { box-sizing: border-box; }
+    ::selection { background: rgba(66, 211, 146, .35); color: var(--text); }
     body {
       margin: 0;
-      background: var(--bg);
+      min-height: 100vh;
+      background:
+        linear-gradient(90deg, rgba(230, 180, 80, .05) 1px, transparent 1px) 0 0 / 76px 76px,
+        linear-gradient(rgba(230, 180, 80, .035) 1px, transparent 1px) 0 0 / 76px 76px,
+        radial-gradient(circle at 75% -10%, rgba(66, 211, 146, .13), transparent 34%),
+        linear-gradient(135deg, var(--bg), #15130f 62%, #1d1b13);
       color: var(--text);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: var(--body);
       line-height: 1.45;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 3px);
+      mix-blend-mode: overlay;
+      opacity: .5;
     }
     header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding: 18px 24px;
+      padding: 18px clamp(18px, 4vw, 44px);
       border-bottom: 1px solid var(--line);
-      background: #ffffff;
+      background: rgba(16, 17, 15, .86);
+      backdrop-filter: blur(18px);
       position: sticky;
       top: 0;
       z-index: 5;
+      box-shadow: 0 16px 40px rgba(0,0,0,.22);
     }
-    h1 { margin: 0; font-size: 22px; }
-    h2 { margin: 0 0 12px; font-size: 18px; }
-    h3 { margin: 0 0 8px; font-size: 15px; }
+    h1 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(26px, 3vw, 42px);
+      letter-spacing: 0;
+      line-height: 1;
+    }
+    h1::after {
+      content: " / control deck";
+      color: var(--accent);
+      font: 700 12px var(--mono);
+      text-transform: uppercase;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 13px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    h3 { margin: 16px 0 8px; font-size: 15px; color: #efe4c8; }
     main {
-      width: min(1180px, calc(100% - 32px));
-      margin: 20px auto 48px;
+      width: min(1320px, calc(100% - 28px));
+      margin: 24px auto 56px;
       display: grid;
-      gap: 16px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
     }
     section {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 16px;
+      border-radius: 6px;
+      padding: 18px;
+      box-shadow: 0 20px 70px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04);
+      position: relative;
+      overflow: hidden;
+    }
+    section::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--warn), transparent);
+      opacity: .9;
     }
     .toolbar {
       display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
+      margin: 12px 0 0;
     }
     .grid {
       display: grid;
@@ -533,47 +588,92 @@ ADMIN_HTML = """<!doctype html>
     .span-4 { grid-column: span 4; }
     .metric {
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 12px;
-      min-height: 82px;
-      background: #fbfcfd;
+      border-radius: 6px;
+      padding: 13px;
+      min-height: 92px;
+      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
     }
-    .metric b { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-    .metric span { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
-    label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+    .metric b {
+      display: block;
+      font: 700 11px var(--mono);
+      color: var(--muted);
+      margin-bottom: 7px;
+      text-transform: uppercase;
+    }
+    .metric span { font-size: 19px; font-weight: 800; overflow-wrap: anywhere; }
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font: 700 12px var(--mono);
+      text-transform: uppercase;
+    }
     input, textarea, select {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fff;
+      border-radius: 5px;
+      background: #11130f;
       color: var(--text);
-      padding: 9px 10px;
+      padding: 10px 11px;
       font: inherit;
+      outline: none;
+      transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
     }
-    textarea { min-height: 220px; resize: vertical; font-family: var(--mono); font-size: 13px; }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent);
+      background: #0d100d;
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    textarea {
+      min-height: 230px;
+      resize: vertical;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    #persona { min-height: 330px; }
+    #persona-lab-message, #memory-summary { min-height: 190px; }
     button {
-      border: 1px solid var(--accent-dark);
-      background: var(--accent);
-      color: #fff;
-      border-radius: 6px;
-      padding: 9px 12px;
-      font-weight: 700;
+      border: 1px solid rgba(66, 211, 146, .8);
+      background: linear-gradient(180deg, #51e6a3, #20a66b);
+      color: #06100b;
+      border-radius: 5px;
+      padding: 10px 13px;
+      font: 900 12px var(--mono);
+      text-transform: uppercase;
       cursor: pointer;
+      box-shadow: 0 8px 22px rgba(32, 166, 107, .22);
+      transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
     }
-    button.secondary { background: #fff; color: var(--accent-dark); }
-    button.danger { background: var(--danger); border-color: var(--danger); }
+    button:hover { transform: translateY(-1px); filter: brightness(1.06); }
+    button:active { transform: translateY(0); }
+    button.secondary {
+      background: rgba(255,255,255,.035);
+      color: var(--accent);
+      box-shadow: none;
+    }
+    button.danger {
+      background: linear-gradient(180deg, #ff897f, #c93429);
+      border-color: var(--danger);
+      color: #180302;
+      box-shadow: 0 8px 22px rgba(255, 107, 95, .18);
+    }
     button:disabled { opacity: .55; cursor: not-allowed; }
     pre {
       overflow: auto;
-      background: #111827;
-      color: #e5e7eb;
-      border-radius: 8px;
-      padding: 12px;
-      min-height: 80px;
+      background: #080a08;
+      color: #dfe9d7;
+      border: 1px solid #22291f;
+      border-radius: 6px;
+      padding: 13px;
+      min-height: 88px;
       white-space: pre-wrap;
+      font-family: var(--mono);
+      box-shadow: inset 0 1px 18px rgba(0,0,0,.32);
     }
     .note { color: var(--muted); font-size: 13px; }
-    .ok { color: var(--accent-dark); font-weight: 700; }
+    .ok { color: var(--accent); font-weight: 700; }
     .bad { color: var(--danger); font-weight: 700; }
     .warn { color: var(--warn); font-weight: 700; }
     .history {
@@ -584,23 +684,28 @@ ADMIN_HTML = """<!doctype html>
     }
     .history-row {
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 6px;
       padding: 10px;
-      background: #fbfcfd;
+      background: rgba(255,255,255,.035);
     }
     .history-row small { color: var(--muted); display: block; margin-bottom: 4px; }
+    #token {
+      width: min(360px, 52vw);
+      font-family: var(--mono);
+    }
     @media (max-width: 880px) {
-      header { align-items: flex-start; }
+      header { align-items: flex-start; flex-direction: column; }
       .grid { grid-template-columns: 1fr; }
       .span-2, .span-4 { grid-column: span 1; }
+      #token { width: 100%; }
     }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>Bot Admin</h1>
-      <div class="note">私用管理面板，API token 只存在瀏覽器 localStorage。</div>
+      <h1>Vibe Bot</h1>
+      <div class="note">Private Discord bot operations console</div>
     </div>
     <div class="toolbar">
       <input id="token" type="password" placeholder="ADMIN_TOKEN">
