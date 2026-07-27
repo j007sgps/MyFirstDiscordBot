@@ -2,3 +2,4 @@
 __pycache__/
 chat_history.db
 bot_state.db
+字幕/
