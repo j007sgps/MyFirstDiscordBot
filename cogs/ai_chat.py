@@ -14,7 +14,7 @@ class AIChat(commands.Cog):
         self.db_path = "chat_history.db"
         self.init_db()
         
-        self.model_name = "gemini-3.5-flash"
+        self.model_name = "gemini-3.6-flash"
         self.default_system_instruction = self.read_default_persona()
 
         # 讀取人設檔案 shachiku.md，把它的內容變成字串交給 AI
