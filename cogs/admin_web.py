@@ -62,6 +62,10 @@ def ensure_memory_tables():
             )
             """
         )
+        cursor.execute("PRAGMA table_info(history)")
+        history_columns = {row[1] for row in cursor.fetchall()}
+        if "user_id" not in history_columns:
+            cursor.execute("ALTER TABLE history ADD COLUMN user_id INTEGER")
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS summaries (
@@ -167,6 +171,19 @@ class AdminWeb(commands.Cog):
         if not channel:
             return ""
         return getattr(channel, "name", "") or str(channel)
+
+    def resolve_display_name(self, channel_id, user_id):
+        if self.bot.user and user_id == self.bot.user.id:
+            return "限界社畜"
+        channel = self.bot.get_channel(int(channel_id))
+        guild = getattr(channel, "guild", None)
+        member = guild.get_member(user_id) if guild else None
+        if member:
+            return member.display_name
+        user = self.bot.get_user(user_id)
+        if user:
+            return user.display_name
+        return f"使用者{user_id}"
 
     async def handle_index(self, request):
         return web.Response(text=ADMIN_HTML, content_type="text/html")
@@ -424,7 +441,7 @@ class AdminWeb(commands.Cog):
             history_count = cursor.fetchone()[0]
             cursor.execute(
                 """
-                SELECT id, message, timestamp FROM history
+                SELECT id, user_id, message, timestamp FROM history
                 WHERE channel_id = ?
                 ORDER BY id DESC
                 LIMIT 10
@@ -441,8 +458,16 @@ class AdminWeb(commands.Cog):
                 "has_summary": bool(summary_row and summary_row[0]),
                 "history_count": history_count,
                 "history": [
-                    {"id": row_id, "message": message, "timestamp": timestamp}
-                    for row_id, message, timestamp in history_rows
+                    {
+                        "id": row_id,
+                        "message": (
+                            f"[{self.resolve_display_name(channel_id, user_id)}]: {message}"
+                            if user_id is not None
+                            else message
+                        ),
+                        "timestamp": timestamp,
+                    }
+                    for row_id, user_id, message, timestamp in history_rows
                 ],
             }
         )

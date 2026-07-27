@@ -57,6 +57,10 @@ class AIChat(commands.Cog):
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute("PRAGMA table_info(history)")
+            history_columns = {row[1] for row in cursor.fetchall()}
+            if "user_id" not in history_columns:
+                cursor.execute('ALTER TABLE history ADD COLUMN user_id INTEGER')
             # 新增儲存摘要的表
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS summaries (
@@ -66,18 +70,37 @@ class AIChat(commands.Cog):
             ''')
             conn.commit()
 
-    def add_memory(self, channel_id, message):
+    def add_memory(self, channel_id, user_id, content):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO history (channel_id, message) VALUES (?, ?)', (channel_id, message))
+            cursor.execute('INSERT INTO history (channel_id, user_id, message) VALUES (?, ?, ?)', (channel_id, user_id, content))
             conn.commit()
+
+    def resolve_display_name(self, channel_id, user_id):
+        if self.bot.user and user_id == self.bot.user.id:
+            return "限界社畜"
+        channel = self.bot.get_channel(channel_id)
+        guild = getattr(channel, "guild", None)
+        member = guild.get_member(user_id) if guild else None
+        if member:
+            return member.display_name
+        user = self.bot.get_user(user_id)
+        if user:
+            return user.display_name
+        return f"使用者{user_id}"
+
+    def format_history_line(self, channel_id, user_id, content):
+        # 舊資料沒有 user_id，內容本身已經包含 [名稱]: 前綴，直接照原樣顯示即可
+        if user_id is None:
+            return content
+        return f"[{self.resolve_display_name(channel_id, user_id)}]: {content}"
 
     def get_memory_with_ids(self, channel_id, limit=20):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id, message FROM history 
-                WHERE channel_id = ? 
+                SELECT id, user_id, message FROM history
+                WHERE channel_id = ?
                 ORDER BY id DESC LIMIT ?
             ''', (channel_id, limit))
             rows = cursor.fetchall()
@@ -193,7 +216,10 @@ class AIChat(commands.Cog):
             parts.append("**長期摘要**\n目前沒有壓縮摘要。")
 
         if history_rows:
-            history_text = "\n".join([f"{row_id}. {message}" for row_id, message in history_rows])
+            history_text = "\n".join([
+                f"{row_id}. {self.format_history_line(channel_id, user_id, content)}"
+                for row_id, user_id, content in history_rows
+            ])
             parts.append(f"**近期未壓縮對話**\n{history_text}")
         else:
             parts.append("**近期未壓縮對話**\n目前沒有。")
@@ -244,8 +270,8 @@ class AIChat(commands.Cog):
             if "誰一百" in user_msg:
                 reply_text = "你才誰一百！你全家都誰一百！！！"
                 await message.reply(reply_text)
-                self.add_memory(channel_id, f"[{current_user}]: {user_msg}")
-                self.add_memory(channel_id, f"[限界社畜]: {reply_text}")
+                self.add_memory(channel_id, message.author.id, user_msg)
+                self.add_memory(channel_id, self.bot.user.id, reply_text)
                 # 滾動式記憶壓縮檢查
                 self.bot.loop.create_task(self.compress_memory(channel_id))
                 return
@@ -266,19 +292,22 @@ class AIChat(commands.Cog):
                             
                         # 1. 組合近期未壓縮的記憶 (取最多 50 句)
                         history_rows = self.get_memory_with_ids(channel_id, limit=50)
-                        history = [row[1] for row in history_rows]
+                        history = [
+                            self.format_history_line(channel_id, user_id, content)
+                            for _row_id, user_id, content in history_rows
+                        ]
                         if history:
                             history_lines = "\n".join(history)
                             prompt_text += f"【近期對話紀錄參考】\n{history_lines}\n\n"
-                            
+
                         # 2. 加上這次發言者的內容
                         if user_msg:
                             prompt_text += f"【現在】[{current_user}]: {user_msg}"
-                            self.add_memory(channel_id, f"[{current_user}]: {user_msg}")
+                            self.add_memory(channel_id, message.author.id, user_msg)
                         elif message.attachments:
                             # 若使用者僅傳圖未打字
                             prompt_text += f"【現在】[{current_user}]: (傳送了一張圖片) 請發揮你的「限界社畜」人設，幫我狠狠評價一下這張圖片裡的東西！是罪惡的宵夜還是破壞心情的健康食物？"
-                            self.add_memory(channel_id, f"[{current_user}]: (傳送了一張圖片)")
+                            self.add_memory(channel_id, message.author.id, "(傳送了一張圖片)")
                             
                         contents.append(prompt_text)
                             
@@ -304,7 +333,7 @@ class AIChat(commands.Cog):
                         await self.send_chunked_reply(message, reply_text)
                         
                         # 3. 把機器人自己的回覆也存進記憶裡
-                        self.add_memory(channel_id, f"[限界社畜]: {reply_text.strip()}")
+                        self.add_memory(channel_id, self.bot.user.id, reply_text.strip())
                         
                         # 4. 觸發滾動式摘要壓縮檢查 (放入背景執行，不卡住回應)
                         self.bot.loop.create_task(self.compress_memory(channel_id))
@@ -324,7 +353,10 @@ class AIChat(commands.Cog):
             print(f"[系統] 頻道 {channel_id} 對話超過 30 句，開始進行背景記憶壓縮...")
             # 找出這批對話中最新的 ID，等一下刪除時只刪到這個 ID，避免把壓縮期間新進來的對話刪掉
             last_id = history_rows[-1][0]
-            history_text = "\n".join([row[1] for row in history_rows])
+            history_text = "\n".join([
+                self.format_history_line(channel_id, user_id, content)
+                for _row_id, user_id, content in history_rows
+            ])
             
             old_summary = self.get_summary(channel_id)
             
