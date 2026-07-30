@@ -14,7 +14,7 @@
 - 語言：Python
 - Discord 框架：`discord.py`
 - Discord 指令：使用 `discord.app_commands` Slash Commands；mention bot 聊天仍靠 `on_message`
-- AI：`google-generativeai`，目前在 `cogs/ai_chat.py` 使用 `gemini-3.5-flash`
+- AI：`google-genai`（新版統一 SDK，舊版 `google-generativeai` 已終止維護），目前在 `cogs/ai_chat.py` 使用 `gemini-3.6-flash`，並掛上 Google Search grounding tool 讓 AI 能查即時資訊
 - YouTube 來源：YouTube RSS feed，透過 `feedparser` 解析
 - 設定來源：`.env` 與 `config.py`
 - 功能模組：使用 Discord.py Cogs，主程式在啟動時載入 `cogs.youtube` 與 `cogs.ai_chat`
@@ -44,9 +44,11 @@
 
 - `cogs/ai_chat.py`
   - `AIChat` cog。
+  - 用 `genai.Client(api_key=...)`（`google-genai` SDK）呼叫 Gemini，`generate(system_instruction, contents, enable_search=True)` 是統一的呼叫入口。
+  - `enable_search=True`（預設，聊天回覆用）時會掛上 `types.Tool(google_search=types.GoogleSearch())`，讓 AI 能上網查即時資訊；`compress_memory()` 做記憶摘要時關掉（`enable_search=False`），不需要查資料。
   - 當 bot 被單獨 mention 時才回應，避免 `@everyone`、role mention 或多重 mention 觸發。
   - 讀取 `shachiku.md` 作為 Gemini system instruction。
-  - 支援文字與圖片附件；圖片附件會用 bytes 傳給 Gemini。
+  - 支援文字與圖片附件；圖片附件會轉成 `types.Part.from_bytes(...)` 傳給 Gemini。
   - 使用 SQLite `chat_history.db` 存聊天記憶。
   - `history` 表保存近期對話，`summaries` 表保存每個 channel 的壓縮摘要。
   - 累積到一定量後背景呼叫 `compress_memory()`，用 Gemini 重新整理角色/群組記憶，再刪除已壓縮的 history。

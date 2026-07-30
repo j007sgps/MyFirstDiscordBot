@@ -158,13 +158,10 @@ class AdminWeb(commands.Cog):
 
     def get_gemini_model_name(self):
         ai_cog = self.bot.get_cog("AIChat")
-        if not ai_cog or not hasattr(ai_cog, "model"):
+        if not ai_cog or not hasattr(ai_cog, "model_name"):
             return "未載入"
 
-        model_name = getattr(ai_cog.model, "model_name", "") or getattr(ai_cog.model, "_model_name", "")
-        if model_name.startswith("models/"):
-            model_name = model_name[7:]
-        return model_name or "無法取得模型名稱"
+        return ai_cog.model_name or "無法取得模型名稱"
 
     def get_channel_name(self, channel_id):
         channel = self.bot.get_channel(int(channel_id))
@@ -278,8 +275,7 @@ class AdminWeb(commands.Cog):
         if not ai_cog:
             return self.json_response({"error": "AIChat is not loaded"}, status=503)
 
-        model = ai_cog.build_model(content)
-        response = model.generate_content(message)
+        response = ai_cog.generate(content, message)
         return self.json_response({"ok": True, "reply": getattr(response, "text", "")})
 
     async def handle_get_personas(self, request):

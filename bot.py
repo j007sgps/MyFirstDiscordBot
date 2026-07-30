@@ -4,7 +4,6 @@ from discord.ext import commands
 import os
 import sqlite3
 from datetime import datetime, timezone
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 # ============== 初始化設定 ==============
@@ -13,7 +12,6 @@ load_dotenv()
 
 # 2. 從環境變數讀取密碼（必須在 load_dotenv 之後執行！）
 TOKEN = os.getenv('DISCORD_TOKEN')
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
 # 3. 設定 Discord 意圖 (Intents)
 intents = discord.Intents.default()
@@ -100,17 +98,8 @@ def build_status_text():
     discord_token_status = "已設定" if TOKEN else "未設定"
 
     gemini_model = "未載入"
-    if ai_cog and hasattr(ai_cog, "model"):
-        try:
-            model_name = getattr(ai_cog.model, "model_name", "") or getattr(ai_cog.model, "_model_name", "")
-            if model_name:
-                if model_name.startswith("models/"):
-                    model_name = model_name[7:]
-                gemini_model = model_name
-            else:
-                gemini_model = "無法取得模型名稱"
-        except Exception as e:
-            gemini_model = f"讀取失敗 ({e})"
+    if ai_cog and hasattr(ai_cog, "model_name"):
+        gemini_model = ai_cog.model_name or "無法取得模型名稱"
 
     return (
         "✌🥺✌ **Bot 狀態報告**\n"

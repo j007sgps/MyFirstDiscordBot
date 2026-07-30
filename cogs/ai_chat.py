@@ -1,8 +1,10 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-import google.generativeai as genai
+import os
 import sqlite3
+from google import genai
+from google.genai import types
 from config import load_persona_store
 
 SAFE_MESSAGE_LIMIT = 1900
@@ -13,12 +15,10 @@ class AIChat(commands.Cog):
         # 記憶系統：改用 SQLite 達成永久記憶！
         self.db_path = "chat_history.db"
         self.init_db()
-        
+
         self.model_name = "gemini-3.6-flash"
         self.default_system_instruction = self.read_default_persona()
-
-        # 讀取人設檔案 shachiku.md，把它的內容變成字串交給 AI
-        self.model = self.build_model(self.default_system_instruction)
+        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     def read_default_persona(self):
         try:
@@ -27,10 +27,16 @@ class AIChat(commands.Cog):
         except FileNotFoundError:
             return "你是一隻限界社畜，喜歡在深夜大吃特吃背德美食。"
 
-    def build_model(self, system_instruction):
-        return genai.GenerativeModel(
-            model_name=self.model_name, # 使用更輕巧、快速的 flash 版本！
-            system_instruction=system_instruction
+    def generate(self, system_instruction, contents, enable_search=True):
+        # enable_search=True 時掛上 Google 搜尋 grounding，讓 AI 能查即時資訊
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=[types.Tool(google_search=types.GoogleSearch())] if enable_search else None,
+        )
+        return self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=config,
         )
 
     def get_persona_for_channel(self, channel_id):
@@ -41,10 +47,6 @@ class AIChat(commands.Cog):
         if content:
             return content, template_id
         return self.read_default_persona(), ""
-
-    def get_model_for_channel(self, channel_id):
-        system_instruction, _ = self.get_persona_for_channel(channel_id)
-        return self.build_model(system_instruction)
 
     def init_db(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -316,17 +318,17 @@ class AIChat(commands.Cog):
                             if attachment.content_type and attachment.content_type.startswith('image/'):
                                 # 下載圖片資料轉為 bytes
                                 image_bytes = await attachment.read()
-                                contents.append({
-                                    "mime_type": attachment.content_type,
-                                    "data": image_bytes
-                                })
-                        
+                                contents.append(
+                                    types.Part.from_bytes(data=image_bytes, mime_type=attachment.content_type)
+                                )
+
                         # 防呆機制：如果是文字跟非圖片附件，但根本沒有可以餵給模型的內容
                         if not contents:
                             return
 
-                        # 丟進模型產生回覆！(Gemini 可以直接接收字串與圖片字典混合的 List)
-                        response = self.get_model_for_channel(channel_id).generate_content(contents)
+                        # 丟進模型產生回覆！(帶上 Google 搜尋 grounding，AI 可以查即時資訊)
+                        system_instruction, _ = self.get_persona_for_channel(channel_id)
+                        response = self.generate(system_instruction, contents)
                         
                         # 回傳給 Discord
                         reply_text = response.text
@@ -374,8 +376,9 @@ class AIChat(commands.Cog):
                 prompt += f"【過去的群組成員人物誌】\n{old_summary}\n\n"
             prompt += f"【最新對話紀錄】\n{history_text}\n\n請輸出更新後的人物誌："
             
-            # 用同一個模型來做摘要
-            response = self.get_model_for_channel(channel_id).generate_content(prompt)
+            # 用同一個人設來做摘要，摘要不需要上網查資料
+            system_instruction, _ = self.get_persona_for_channel(channel_id)
+            response = self.generate(system_instruction, prompt, enable_search=False)
             new_summary = response.text.strip()
             
             # 更新資料庫的摘要，並刪除已經壓縮過的對話
