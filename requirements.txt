@@ -1,5 +1,5 @@
-discord.py
-feedparser
-python-dotenv
-google-genai
-aiohttp
+discord.py>=2.4,<3
+feedparser>=6.0.11,<7
+python-dotenv>=1.0,<2
+google-genai>=2.15,<3
+aiohttp>=3.9,<4
