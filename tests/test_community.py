@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import discord
 import cogs.community as module
+import cogs.ai_chat as ai_module
 from cogs.community import ActivityView, Community, board_embed
 from services.community_store import CommunityStore
 from services.time_input import parse_time, poll_options
@@ -171,7 +172,7 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(board_id, self.cog.views)
 
     async def test_partial_send_retry_resumes_without_second_ai_call_or_pings(self):
-        ai = SimpleNamespace(client=object(), read_default_persona=Mock(return_value="DEFAULT"), get_persona_for_channel=Mock(return_value=("CHANNEL", "id")), generate=AsyncMock(return_value="@everyone 開場白"))
+        ai = SimpleNamespace(client=object(), read_default_persona=Mock(return_value="DEFAULT"), get_persona_for_channel=Mock(return_value=("CHANNEL", "id")), generate=AsyncMock(return_value=SimpleNamespace(text="@everyone 開場白")))
         self.bot.get_cog.return_value = ai
         self.store.release("v1", 2, "@everyone " + "更新\n" * 1500)
         job_id = self.store.jobs()[0]["id"]
@@ -183,6 +184,8 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job["status"], "pending")
         ai.read_default_persona.assert_called_once()
         ai.get_persona_for_channel.assert_not_called()
+        self.assertIn("開場白", job["rendered"]["parts"][0])
+        self.assertNotIn("更新好啦", job["rendered"]["parts"][0])
         self.assertFalse(ai.generate.call_args.kwargs["enable_search"])
         with self.store.connect() as conn:
             conn.execute("UPDATE community_outbox SET retry_at=0 WHERE id=?", (job_id,))
@@ -210,6 +213,22 @@ class CommunityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([user.id for user in self.channel.send.call_args.kwargs["allowed_mentions"].users], [3])
         ai.get_persona_for_channel.assert_called_once_with(2)
         self.assertEqual(self.store.reminder(reminder_id)["status"], "sent")
+
+    async def test_notification_uses_real_ai_generate_response_contract(self):
+        ai = ai_module.AIChat.__new__(ai_module.AIChat)
+        response = SimpleNamespace(text="社畜下班啦，該吃拉麵了！")
+        request = AsyncMock(return_value=response)
+        ai.client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=request)))
+        ai.request_slots = asyncio.Semaphore(3)
+        ai.get_persona_for_channel = Mock(return_value=("CHANNEL PERSONA", "template"))
+        self.bot.get_cog.return_value = ai
+        reminder_id = self.store.create_reminder(1, 2, 3, "吃拉麵", 1000)
+        self.store.advance()
+        with patch.object(ai_module, "load_settings", return_value={"gemini_model":"gemini-3.8-flash", "ai_search_enabled":True, "ai_max_output_tokens":2048}):
+            await self.cog.dispatch(self.store.job_for(f"reminder:{reminder_id}")["id"])
+        self.assertTrue(self.channel.send.call_args.args[0].startswith(response.text))
+        self.assertEqual(request.call_args.kwargs["config"].system_instruction, "CHANNEL PERSONA")
+        self.assertIsNone(request.call_args.kwargs["config"].tools)
 
     async def test_large_group_mentions_are_split_into_valid_allowlists(self):
         board_id = self.store.create_board("group", 1, 2, 111111111111111111, "large group", 2000, now=1000)

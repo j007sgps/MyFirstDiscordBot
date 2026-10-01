@@ -89,7 +89,7 @@ Owner：`/管理`、`/人格匯入`、`/人格匯出`、`/memory`、`/記憶`、
 - 持久 View 必須 timeout=None 且元件有 custom_id，重啟用 message_id 註冊。互動重新核對 guild／channel／message；不能只相信 custom_id。
 - `community_boards`、`community_members`、`community_reminders`、`community_outbox`、`release_announcements` 同在 bot_state.db；勿重建或刪除原表。建立面板也先入 outbox，傳送成功才啟用。
 - outbox 保存 rendered、逐段 progress、message_ids；失敗最多 5 分鐘間隔重試，不重送已記錄段落、不重做 AI。只有送完才完成提醒／版本紀錄。Discord／SQLite 崩潰窗口仍可能重送一段，勿宣稱 exactly-once。
-- 提醒用發送當下的頻道人格，版本開場用預設人格；AI 只寫短開場白，正文保留原始內容。搜尋固定關閉、不寫入記憶；12 秒逾時／生成失敗使用固定文字。
+- 提醒用發送當下的頻道人格，版本開場用預設人格；AI 只寫短開場白，正文保留原始內容。`AIChat.generate()` 回傳 SDK Response，文字從 `.text` 取，不是直接回傳字串。搜尋固定關閉、不寫入記憶；12 秒逾時／生成失敗使用固定文字。
 - 提醒只標記建立者；揪團只標記參加者；版本與投票不標記人。文字中的其他 mentions 必須 escape，AllowedMentions 不允許 role／everyone。
 - 新版啟動通知使用 release.json 的版本號去重，目的地是排入時 settings.discord_channel_id；同版本 reload／restart 不重新排入。notes_file 必須在專案內，UTF-8 最多 32 KiB。版本檔錯誤不能停掉其他排程。
 - 刪除面板不等於取消活動；停機後到期的已建立活動／提醒會補處理。活動／提醒目的地固定建立時頻道。
@@ -121,13 +121,13 @@ python bot.py
 
 部署第一次需要完整重啟（更新了 bot.py／載入模組）；Cog 後續修改可 `/reload extension:ai_chat`、`youtube`、`admin`、`community`。套件／.env／主程式修改需重啟。注意備份資料庫並保持單一程序。
 
-2026-10-01 版本 2026.10.01.1：41 項自動測試通過，含活動、競爭名額、部分通知恢復、大型揪團標記、權限、啟動／熱重載及 session 關閉。先前公開來源實測 15 支影片、10 則貼文；真實 3.8 Flash 最小請求成功。自動測試沒有向真實 Discord 建立活動，按鈕仍需上線人工驗證。
+2026-10-01 版本 2026.10.01.1：42 項自動測試通過，含活動、競爭名額、部分通知恢復、大型揪團標記、權限、啟動／熱重載及 session 關閉。先前公開來源實測 15 支影片、10 則貼文；真實 3.8 Flash 最小請求成功。自動測試沒有向真實 Discord 建立活動，按鈕仍需上線人工驗證。
 
 ## GCP 維運資訊
 
 - Project：`makecom-459608`；VM：`instance-20260331-134501`；zone：`us-central1-a`。
 - 執行使用者：`j007sgps`；專案：`/home/j007sgps/MyFirstDiscordBot`；Python：`venv/bin/python`。
-- 目前使用 nohup，更新前以精確 argv／cwd／uid 確認 bot PID，停止旧程序後才啟動新程序，禁止廣泛 pkill 或同時跑兩個 bot。
+- 目前使用 nohup，更新前以精確 argv／cwd／uid 確認 bot PID，停止舊程序後才啟動新程序，禁止廣泛 pkill 或同時跑兩個 bot。
 - `.env`、兩個 DB、`settings.json`、`personas.json`、`shachiku.md` 先備份到 `/home/j007sgps/vibe-backups/<時間>`；SQLite 使用 backup API，備份機密檔案權限 600、目錄 700。
 - 遠端 settings／personas 可由 Discord 修改，git pull 不可覆蓋這些執行時資料。2026-10-01 部署前 AI 搜尋已由使用者開啟，勿用本機預設關閉值覆蓋。
 - 更新使用 ff-only，驗證預期 commit、測試、Slash 同步與單一程序。更新失敗先停新程序，再恢復舊碼、依賴及必要備份後啟動。
