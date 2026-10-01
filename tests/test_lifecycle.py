@@ -28,9 +28,9 @@ class LifecycleTests(unittest.TestCase):
                         bot.tree.sync = AsyncMock(return_value=[])
                         with patch('builtins.print'):
                             await bot.setup_hook()
-                        assert set(bot.extensions) == {'cogs.youtube', 'cogs.ai_chat', 'cogs.admin'}
+                        assert set(bot.extensions) == {'cogs.youtube', 'cogs.ai_chat', 'cogs.admin', 'cogs.community'}
                         names = {command.name for command in bot.tree.get_commands()}
-                        assert len(names) == 12
+                        assert len(names) == 18
                         old_youtube = bot.get_cog('YouTubeTracker')
                         old_session = old_youtube.session
                         await bot.reload_extension('cogs.youtube')
@@ -38,9 +38,14 @@ class LifecycleTests(unittest.TestCase):
                         assert not old_youtube.check_new_video.is_running()
                         await bot.reload_extension('cogs.ai_chat')
                         await bot.reload_extension('cogs.admin')
+                        old_community = bot.get_cog('Community')
+                        await bot.reload_extension('cogs.community')
+                        assert not old_community.worker.is_running()
                         assert names == {command.name for command in bot.tree.get_commands()}
                         new_session = bot.get_cog('YouTubeTracker').session
+                        community = bot.get_cog('Community')
                     assert new_session.closed
+                    assert not community.worker.is_running()
                 print('lifecycle OK')
             asyncio.run(main())
         """)

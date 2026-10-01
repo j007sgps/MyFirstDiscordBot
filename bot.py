@@ -29,6 +29,7 @@ class VibeBot(commands.Bot):
         await self.load_extension("cogs.youtube")
         await self.load_extension("cogs.ai_chat")
         await self.load_extension("cogs.admin")
+        await self.load_extension("cogs.community")
         synced_commands = await self.tree.sync()
         print(f"Slash commands 已同步：{len(synced_commands)} 個")
 
@@ -83,8 +84,8 @@ async def reload(interaction: discord.Interaction, extension: str):
         await interaction.response.send_message("這是 owner-only 指令。哼，權限不夠就不要亂摸開關。", ephemeral=True)
         return
 
-    if extension not in {"ai_chat", "youtube", "admin"}:
-        await send_private(interaction, "可重載的模組：ai_chat、youtube、admin。")
+    if extension not in {"ai_chat", "youtube", "admin", "community"}:
+        await send_private(interaction, "可重載的模組：ai_chat、youtube、admin、community。")
         return
 
     await interaction.response.defer(thinking=True, ephemeral=True)
@@ -103,6 +104,7 @@ def build_status_text():
     now = datetime.now(timezone.utc)
     ai_cog = bot.get_cog("AIChat")
     youtube_cog = bot.get_cog("YouTubeTracker")
+    community_cog = bot.get_cog("Community")
     youtube_loop = "運作中" if youtube_cog and youtube_cog.check_new_video.is_running() else "未運作"
     loaded_cogs = ", ".join(sorted(bot.extensions.keys())) or "無"
     latency_ms = round(bot.latency * 1000) if math.isfinite(bot.latency) else "尚未連線"
@@ -124,6 +126,8 @@ def build_status_text():
         f"AI Chat Cog：{'已載入' if ai_cog else '未載入'}\n"
         f"YouTube Cog：{'已載入' if youtube_cog else '未載入'}\n"
         f"YouTube 巡邏任務：{youtube_loop}\n"
+        f"活動排程：{'運作中' if community_cog and community_cog.worker.is_running() else '未運作'}\n"
+        f"活動近期錯誤：{community_cog.health_error or '無已知錯誤' if community_cog else '未載入'}\n"
         f"AI 近期記憶筆數：{count_sqlite_rows(CHAT_DB_PATH, 'history')}\n"
         f"AI 長期摘要頻道數：{count_sqlite_rows(CHAT_DB_PATH, 'summaries')}\n"
         f"YouTube 舊版／新影片紀錄數：{count_sqlite_rows(BOT_STATE_DB_PATH, 'youtube_notified')}\n"
